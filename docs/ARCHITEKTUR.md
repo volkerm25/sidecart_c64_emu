@@ -1,6 +1,6 @@
 # C64-Emulator auf dem SidecarTridge Multi-device – Architektur, Risiken, Plan
 
-Stand: 2026-11-17 · Status: Entwurf v0.4 (Phase 1: ST-Durchsatz gemessen)
+Stand: 2026-11-17 · Status: Entwurf v0.5 (Phase 1: ST-Durchsatz gemessen, 250 MHz vorläufig bestanden)
 
 ## 1. Ziel und Rahmenbedingungen
 
@@ -178,7 +178,7 @@ sidecart_c64_emu/
 | # | Risiko | W'keit | Auswirkung | Gegenmaßnahme / Prüfung |
 |---|---|---|---|---|
 | **R1** | Bandbreite ST ← Cartridge zu gering | ~~hoch~~ **gemessen** | mittel | 4,78 Zyklen/Byte, keine Waitstates (3.1). Dirty-Lines (bis ~180 Zeilen bei 50 fps), sonst 25 fps. ST-Double-Buffering |
-| **R2** | **Takt:** Das Template läuft mit 225 MHz, MCUME mit 250 MHz. Die PIO läuft mit Teiler 1, ihr Timing hängt also am Sys-Clock | hoch | hoch | Phase 1: (a) ROM-Emulation bei 250 MHz Langzeittest, ggf. PIO-Delays anpassen; (b) Emulator-Speed bei 225 MHz messen. Fallback: 225 MHz + Frameskip |
+| **R2** | **Takt:** Das Template läuft mit 225 MHz, MCUME mit 250 MHz. Die PIO läuft mit Teiler 1, ihr Timing hängt also am Sys-Clock | ~~hoch~~ **niedrig** | hoch | 2026-11-17 vorläufig bestanden: Bei 250 MHz / 1,10 V gleicher Durchsatz wie bei 225 MHz. Dauertest mit 2 000 Durchläufen (~64 MB ROM4-Reads + 2 000 ROM3-Kommandos mit Rückleseprüfung) ohne Fehler. Offen: Langzeitlauf ≥ 30 min. Fallback: 1,15 V bzw. 225 MHz + Frameskip |
 | **R3** | CPU-Budget core0 reicht nicht für 50 Hz C64-Echtzeit | mittel–hoch | hoch | Messen. Heißen Code ins RAM (`__not_in_flash_func`). reSID entfällt bereits. Notfalls C64 langsamer als Echtzeit oder Rendering nur jeden 2. Frame |
 | **R4** | RAM: Bedarf ~198 KB bei 192 KB verfügbar (gemessen + geschätzt, 3.5) | hoch | hoch | Hebel aus 3.5: Netzwerk raus, Heap kleiner, ROMs im Flash, Backbuffer einsparen. Budget per `.map` prüfen |
 | **R5** | XIP-Cache-Misses (ROMs, `pla.cpp`, Opcode-Tabellen) bremsen | mittel | mittel | ROMs und heiße Funktionen ins RAM, mit/ohne messen |
@@ -204,7 +204,7 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 
 ### Phase 1 – Machbarkeit (Go/No-Go)
 1. **R1:** ST kopiert 32 000 B aus `$FA2300` ins Video-RAM, Zeit messen. Mit Testbild vom RP. ✅ 2026-11-17: 19,1 ms/Bild (`movem.l`), siehe 3.1.
-2. **R2:** ROM-Emulation bei 250 MHz (und ggf. 1,15 V) im Langzeittest mit Prüfsummen.
+2. **R2:** ROM-Emulation bei 250 MHz (und ggf. 1,15 V) im Langzeittest mit Prüfsummen. ✅ vorläufig, 2026-11-17: Dauertest der Test-Firmware (`D`) bei 225 und 250 MHz ohne Fehler (1 000 bzw. 2 000 Durchläufe). Build mit `make deploy RP_CLOCK_KHZ=250000`. Offen: Langzeitlauf ≥ 30 min.
 3. **R3–R5:** pico64-Kern mit Stubs in der MD-App, Frames/s bei 225 und 250 MHz, mit und ohne ROMs/Hot-Code im RAM. `.map`-Analyse für das RAM.
 4. **R12:** Host-Build: Kern am PC, BASIC-Startbild als PPM.
 - **M1:** Messbericht → Takt, Frame-Rate-Ziel, Core-Aufteilung festlegen.
