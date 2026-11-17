@@ -335,7 +335,7 @@ void cmdC64(const char *arg) {
   term_printString("[C] refresh  [M] menu\n");
 }
 
-// Drive 8: "d" lists the D64 images in C64DRIVE_FOLDER, "d <n>" mounts the
+// Drive 8: "d" lists the disk images (.d64, .d81) in C64DRIVE_FOLDER, "d <n>" mounts the
 // n-th of them.
 #define DISK_LIST_MAX 16
 
@@ -367,7 +367,7 @@ void cmdDisk(const char *arg) {
     count++;
   }
   if (count == 0) {
-    term_printString("No D64 images in " C64DRIVE_FOLDER ".\n");
+    term_printString("No disk images in " C64DRIVE_FOLDER ".\n");
   }
   term_printString("\nD <number> mounts  [M] menu\n");
 }

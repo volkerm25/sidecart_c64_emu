@@ -1,6 +1,7 @@
 /**
  * File: c64drive.c
- * Description: Virtual drive 8: LOAD from a D64 image (see c64drive.h).
+ * Description: Virtual drive 8: LOAD from a D64 or D81 image (see
+ * c64drive.h).
  * License: GPL v3
  *
  * LOAD "$" builds the directory as a BASIC program, laid out like a 1541's
@@ -20,12 +21,24 @@
 #include "pico/stdlib.h"
 
 #define SECTOR_SIZE 256
-#define DIR_TRACK 18
-#define MAX_CHAIN 800  // more sectors than any image holds: a loop guard
+#define MAX_CHAIN 3200  // more sectors than any image holds: a loop guard
+
+// Where the formats differ. Directory entries and file chains are the same.
+typedef struct {
+  bool d81;
+  unsigned dirTrack;     // header (and, on a D64, BAM) in sector 0
+  unsigned dirSector;    // first directory sector
+  unsigned headerName;   // disk name, 16 bytes, in the header sector
+  unsigned headerId;     // ID, $A0, DOS type: 5 bytes
+} Format;
+
+static const Format d64Format = {false, 18, 1, 0x90, 0xA2};
+static const Format d81Format = {true, 40, 3, 0x04, 0x16};
 
 static uint8_t *ram;
 static FIL image;
 static bool mounted;
+static const Format *format;
 static unsigned imageTracks;
 static char mountedName[64];
 static uint8_t sector[SECTOR_SIZE];
@@ -52,12 +65,13 @@ void c64drive_init(uint8_t *c64Ram) { ram = c64Ram; }
 // Image files
 // ---------------------------------------------------------------------------
 
-static bool hasD64Extension(const char *name) {
+// .d64 or .d81, any case.
+static bool hasImageExtension(const char *name) {
   size_t len = strlen(name);
   if (len < 4) return false;
   const char *ext = name + len - 4;
-  return ext[0] == '.' && (ext[1] == 'd' || ext[1] == 'D') &&
-         ext[2] == '6' && ext[3] == '4';
+  if (ext[0] != '.' || (ext[1] != 'd' && ext[1] != 'D')) return false;
+  return (ext[2] == '6' && ext[3] == '4') || (ext[2] == '8' && ext[3] == '1');
 }
 
 bool c64drive_findImage(int index, char *name, int nameSize) {
@@ -67,7 +81,7 @@ bool c64drive_findImage(int index, char *name, int nameSize) {
   bool found = false;
   while (f_readdir(&dir, &info) == FR_OK && info.fname[0] != '\0') {
     if ((info.fattrib & (AM_DIR | AM_HID | AM_SYS)) ||
-        !hasD64Extension(info.fname)) {
+        !hasImageExtension(info.fname)) {
       continue;
     }
     if (index-- == 0) {
@@ -87,7 +101,7 @@ int c64drive_listImages(int start, char *names, int nameSize, int max) {
   int index = 0;
   while (f_readdir(&dir, &info) == FR_OK && info.fname[0] != '\0') {
     if ((info.fattrib & (AM_DIR | AM_HID | AM_SYS)) ||
-        !hasD64Extension(info.fname)) {
+        !hasImageExtension(info.fname)) {
       continue;
     }
     if (index >= start && index < start + max) {
@@ -109,13 +123,20 @@ bool c64drive_mount(const char *name) {
   snprintf(path, sizeof(path), "%s/%s", C64DRIVE_FOLDER, name);
   if (f_open(&image, path, FA_READ) != FR_OK) return false;
   switch (f_size(&image)) {
-    case 174848:  // 35 tracks
-    case 175531:  // 35 tracks with error bytes
+    case 174848:  // D64, 35 tracks
+    case 175531:  // D64, 35 tracks with error bytes
+      format = &d64Format;
       imageTracks = 35;
       break;
-    case 196608:  // 40 tracks
-    case 197376:  // 40 tracks with error bytes
+    case 196608:  // D64, 40 tracks
+    case 197376:  // D64, 40 tracks with error bytes
+      format = &d64Format;
       imageTracks = 40;
+      break;
+    case 819200:  // D81
+    case 822400:  // D81 with error bytes
+      format = &d81Format;
+      imageTracks = 80;
       break;
     default:
       f_close(&image);
@@ -134,6 +155,7 @@ void c64drive_getLoadStats(unsigned *count, int *lastResult) {
 }
 
 static unsigned sectorsPerTrack(unsigned track) {
+  if (format->d81) return 40;
   if (track <= 17) return 21;
   if (track <= 24) return 19;
   if (track <= 30) return 18;
@@ -145,10 +167,14 @@ static bool readSector(unsigned track, unsigned sectorNo) {
     return false;
   }
   FSIZE_t offset = 0;
-  for (unsigned t = 1; t < track; t++) {
-    offset += (FSIZE_t)sectorsPerTrack(t) * SECTOR_SIZE;
+  if (format->d81) {
+    offset = (FSIZE_t)((track - 1) * 40 + sectorNo) * SECTOR_SIZE;
+  } else {
+    for (unsigned t = 1; t < track; t++) {
+      offset += (FSIZE_t)sectorsPerTrack(t) * SECTOR_SIZE;
+    }
+    offset += (FSIZE_t)sectorNo * SECTOR_SIZE;
   }
-  offset += (FSIZE_t)sectorNo * SECTOR_SIZE;
   UINT got = 0;
   return f_lseek(&image, offset) == FR_OK &&
          f_read(&image, sector, SECTOR_SIZE, &got) == FR_OK &&
@@ -176,33 +202,53 @@ static uint32_t putLine(uint32_t addr, uint16_t lineNo, const uint8_t *text,
   return putByte(addr, 0x00);
 }
 
+// Free blocks from the BAM, the directory track left out. D64: in 18/0, one
+// 4-byte entry per track from offset 4. D81: in 40/1 (tracks 1-40) and 40/2
+// (41-80), one 6-byte entry per track from offset $10. The first byte of an
+// entry is the track's free sector count. Uses the sector buffer.
+static unsigned countBlocksFree(void) {
+  unsigned blocks = 0;
+  if (format->d81) {
+    for (unsigned half = 0; half < 2; half++) {
+      if (!readSector(40, 1 + half)) return 0;
+      for (unsigned i = 0; i < 40; i++) {
+        unsigned track = half * 40 + i + 1;
+        if (track != 40) blocks += sector[0x10 + 6 * i];
+      }
+    }
+  } else {
+    if (!readSector(18, 0)) return 0;
+    for (unsigned track = 1; track <= 35; track++) {
+      if (track != 18) blocks += sector[4 * track];
+    }
+  }
+  return blocks;
+}
+
 static int loadDirectory(uint32_t addr, uint16_t *end) {
   uint8_t text[40];
   int len = 0;
-  if (!readSector(DIR_TRACK, 0)) return C64DRIVE_ERR_FILE_NOT_FOUND;
+  if (!readSector(format->dirTrack, 0)) return C64DRIVE_ERR_FILE_NOT_FOUND;
 
   // Header: reverse on, "disk name", ID and DOS type, $A0 shown as space.
   text[len++] = 0x12;
   text[len++] = '"';
   for (int i = 0; i < 16; i++) {
-    uint8_t c = sector[0x90 + i];
+    uint8_t c = sector[format->headerName + i];
     text[len++] = (c == 0xA0) ? ' ' : c;
   }
   text[len++] = '"';
   text[len++] = ' ';
-  for (int i = 0xA2; i <= 0xA6; i++) {
+  for (unsigned i = format->headerId; i < format->headerId + 5; i++) {
     uint8_t c = sector[i];
     text[len++] = (c == 0xA0) ? ' ' : c;
   }
   addr = putLine(addr, 0, text, len);
 
-  unsigned blocksFree = 0;
-  for (unsigned track = 1; track <= 35; track++) {
-    if (track != DIR_TRACK) blocksFree += sector[4 * track];
-  }
+  unsigned blocksFree = countBlocksFree();
 
-  unsigned track = DIR_TRACK;
-  unsigned sectorNo = 1;
+  unsigned track = format->dirTrack;
+  unsigned sectorNo = format->dirSector;
   for (int guard = 0; track != 0 && guard < MAX_CHAIN; guard++) {
     if (!readSector(track, sectorNo)) break;
     uint8_t nextTrack = sector[0];
@@ -260,8 +306,8 @@ static bool nameMatches(const uint8_t *pattern, int patternLen,
 // The first loadable file matching the pattern: its first track and sector.
 static bool findFile(const uint8_t *pattern, int patternLen, uint8_t *track,
                      uint8_t *sectorNo) {
-  unsigned t = DIR_TRACK;
-  unsigned s = 1;
+  unsigned t = format->dirTrack;
+  unsigned s = format->dirSector;
   for (int guard = 0; t != 0 && guard < MAX_CHAIN; guard++) {
     if (!readSector(t, s)) return false;
     for (int entry = 0; entry < 8; entry++) {

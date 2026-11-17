@@ -69,7 +69,7 @@ static void render(void) {
   snprintf(text[0], COLS + 1, "C64 disk menu");
   snprintf(text[1], COLS + 1, "Drive 8: %.31s", disk ? disk : "empty");
   if (imageCount == 0) {
-    snprintf(text[LIST_FIRST_ROW], COLS + 1, " No D64 images in " C64DRIVE_FOLDER);
+    snprintf(text[LIST_FIRST_ROW], COLS + 1, " No disk images in " C64DRIVE_FOLDER);
   }
   for (int i = 0; i < LIST_ROWS && pageStart + i < imageCount; i++) {
     snprintf(text[LIST_FIRST_ROW + i], COLS + 1, " %.38s", names[i]);

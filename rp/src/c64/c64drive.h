@@ -1,6 +1,6 @@
 /**
  * File: c64drive.h
- * Description: Virtual drive 8: LOAD from a D64 image on the SD card,
+ * Description: Virtual drive 8: LOAD from a D64 or D81 image on the SD card,
  * through the KERNAL's LOAD vector (no 1541 emulation).
  * License: GPL v3
  *
@@ -9,8 +9,9 @@
  * SD card access from its main loop (c64drive_poll) and writes the file
  * straight into the C64's RAM. Only core 0 touches FatFs and the SD driver.
  *
- * Images are D64 files in C64DRIVE_FOLDER: 35 or 40 tracks, with or without
- * error bytes.
+ * Images are files in C64DRIVE_FOLDER: D64 (1541) with 35 or 40 tracks and
+ * D81 (1581), with or without error bytes. A D81's partitions are not
+ * entered.
  */
 
 #ifndef C64DRIVE_H
@@ -34,17 +35,17 @@ extern "C" {
 // Core 0: the C64's 64 KB of RAM, where loads go. Call before the core runs.
 void c64drive_init(uint8_t *c64Ram);
 
-// Core 0: the index-th D64 file in C64DRIVE_FOLDER (0-based, directory
+// Core 0: the index-th disk image (.d64, .d81) in C64DRIVE_FOLDER (0-based, directory
 // order) into name. False when there is no such file or no SD card.
 bool c64drive_findImage(int index, char *name, int nameSize);
 
-// Core 0: in one pass over C64DRIVE_FOLDER, copy the names of D64 files
+// Core 0: in one pass over C64DRIVE_FOLDER, copy the names of disk images
 // start .. start + max - 1 into names (max entries of nameSize bytes).
-// Returns the number of D64 files in the folder (0 without an SD card).
+// Returns the number of disk images in the folder (0 without an SD card).
 int c64drive_listImages(int start, char *names, int nameSize, int max);
 
 // Core 0: mount C64DRIVE_FOLDER/name. False if it cannot be opened or its
-// size is not a D64's.
+// size is not a D64's or a D81's.
 bool c64drive_mount(const char *name);
 
 // The mounted image's file name, or NULL.

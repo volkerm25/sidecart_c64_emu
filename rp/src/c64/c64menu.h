@@ -1,8 +1,8 @@
 /**
  * File: c64menu.h
  * Description: The disk menu over the C64 picture on the ST: F10 opens it,
- * the C64 pauses, and a D64 from the SD card goes into drive 8, with or
- * without a reset and autostart.
+ * the C64 pauses, and a D64 or D81 from the SD card goes into drive 8, with
+ * or without a reset and autostart.
  * License: GPL v3
  *
  * Keys: cursor up/down choose, left/right turn pages, RETURN inserts the
