@@ -56,6 +56,11 @@ static uint16_t renderingFrame;
 #define C64VIDEO_LINE_PIXELS 320
 #define C64VIDEO_POST_FRAME_END 0x80000000u
 static uint16_t slotPixels[C64VIDEO_SLOTS][C64VIDEO_LINE_PIXELS];
+// The diagnostic overlay covers the top C64VIDEO_OVERLAY_LINES lines while
+// it is on; the converter leaves them alone.
+#define C64VIDEO_OVERLAY_LINES (C64VIDEO_OVERLAY_ROWS * 8)
+static volatile bool overlayActive;
+extern const unsigned char rom_characters[4096];  // MCUME's character ROM
 static volatile bool slotBusy[C64VIDEO_SLOTS];
 static unsigned nextSlot;  // core 1 only
 
@@ -94,6 +99,7 @@ void c64video_init(void) {
 
 static void __not_in_flash_func(convertLine)(int line,
                                              const uint16_t *pixels) {
+  if (overlayActive && line < C64VIDEO_OVERLAY_LINES) return;
   volatile uint16_t *dst =
       WINDOW_WORDS(C64VIDEO_SCREEN_OFFSET + line * C64VIDEO_LINE_BYTES);
   uint16_t changed = 0;
@@ -127,6 +133,48 @@ static void __not_in_flash_func(frameEnd)(uint8_t borderColour) {
   WINDOW_WORDS(C64VIDEO_FRAME_OFFSET)[0] = renderingFrame;
   renderingFrame++;
   setBorder(borderColour & 15u);
+}
+
+// ASCII to a C64 screen code (upper case set); anything else is a space.
+static uint8_t screenCode(char c) {
+  if (c >= 'A' && c <= 'Z') return (uint8_t)(c - 'A' + 1);
+  if (c >= 'a' && c <= 'z') return (uint8_t)(c - 'a' + 1);
+  if (c >= 0x20 && c < 0x40) return (uint8_t)c;
+  return 0x20;
+}
+
+void c64video_setOverlay(const char *const rows[C64VIDEO_OVERLAY_ROWS]) {
+  if (rows == NULL) {
+    // The converter redraws the lines, and stamps them since they differ.
+    overlayActive = false;
+    return;
+  }
+  overlayActive = true;
+  volatile uint16_t *stamps = WINDOW_WORDS(C64VIDEO_STAMPS_OFFSET);
+  uint32_t irq = save_and_disable_interrupts();
+  for (int row = 0; row < C64VIDEO_OVERLAY_ROWS; row++) {
+    const char *text = rows[row];
+    size_t len = strlen(text);
+    for (int y = 0; y < 8; y++) {
+      int line = row * 8 + y;
+      volatile uint16_t *dst =
+          WINDOW_WORDS(C64VIDEO_SCREEN_OFFSET + line * C64VIDEO_LINE_BYTES);
+      for (int group = 0; group < 20; group++) {
+        // Two characters per 16-pixel group, in ST colour 1 on colour 0.
+        char left = ((size_t)(2 * group) < len) ? text[2 * group] : ' ';
+        char right = ((size_t)(2 * group + 1) < len) ? text[2 * group + 1] : ' ';
+        uint8_t leftBits = rom_characters[screenCode(left) * 8 + y];
+        uint8_t rightBits = rom_characters[screenCode(right) * 8 + y];
+        dst[0] = (uint16_t)((leftBits << 8) | rightBits);
+        dst[1] = 0;
+        dst[2] = 0;
+        dst[3] = 0;
+        dst += 4;
+      }
+      stamps[line] = renderingFrame;
+    }
+  }
+  restore_interrupts(irq);
 }
 
 // Core 0: the FIFO from core 1 holds data.

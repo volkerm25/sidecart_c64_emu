@@ -16,6 +16,7 @@
 #include "c64drive.h"
 #include "c64host.h"
 #include "c64input.h"
+#include "c64video.h"
 #include "chandler.h"
 #include "commemul.h"
 #include "constants.h"
@@ -153,6 +154,41 @@ static void __not_in_flash_func(emul_pollTick)(void) {
 }
 
 #define MENU_REFRESH_TIME_MS 1000
+
+// The diagnostic overlay on the C64 picture (keypad '(' on the ST), redrawn
+// five times a second: frame count and 6510 state, the bytes at the PC, the
+// slowest frame, and the LOADs served. Drawn from here, it shows even when
+// core 1 has stopped; then the frame count stands still.
+#define OVERLAY_REFRESH_MS 200
+
+static void emul_updateOverlay(void) {
+  static bool shown = false;
+  static absolute_time_t next;
+  if (!c64input_overlayOn) {
+    if (shown) {
+      c64video_setOverlay(NULL);
+      shown = false;
+    }
+    return;
+  }
+  if (shown && absolute_time_diff_us(get_absolute_time(), next) > 0) return;
+  next = make_timeout_time_ms(OVERLAY_REFRESH_MS);
+  C64HostStats st;
+  c64host_getStats(&st);
+  unsigned loads;
+  int lastLoad;
+  c64drive_getLoadStats(&loads, &lastLoad);
+  char row0[41];
+  char row1[41];
+  snprintf(row0, sizeof(row0), "F%08lu PC%04X A%02X X%02X Y%02X S%02X",
+           (unsigned long)st.frames, st.pc, st.a, st.x, st.y, st.sp);
+  snprintf(row1, sizeof(row1), "OP %02X %02X %02X WORST%6luUS LOAD%u R%d",
+           st.code[0], st.code[1], st.code[2], (unsigned long)st.worstFrameUs,
+           loads, lastLoad);
+  const char *const rows[C64VIDEO_OVERLAY_ROWS] = {row0, row1};
+  c64video_setOverlay(rows);
+  shown = true;
+}
 
 // Should we reset the device, or jump to the booster app?
 // By default, we reset the device.
@@ -747,6 +783,7 @@ void emul_start() {
     chandler_loop();
     // A LOAD from drive 8 waits on core 1 until this serves it.
     c64drive_poll();
+    emul_updateOverlay();
     if (chandler_consumeStBoot()) {
       // A new ST session: nothing typed before the reset carries over, and
       // the ST gets a freshly drawn menu.

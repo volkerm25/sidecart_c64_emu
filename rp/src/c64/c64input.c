@@ -23,6 +23,7 @@
  * the C64's port 1 shares its lines with the keyboard rows, so the keyboard
  * stopped working.
  *   F10         leaves the viewer (handled on the ST)
+ *   keypad (    diagnostic overlay on/off (c64video_setOverlay)
  */
 
 #include "c64input.h"
@@ -37,6 +38,8 @@ volatile bool c64input_restorePressed;
 
 static bool swapPorts = false;
 static bool f9WasDown = false;
+static bool overlayKeyWasDown = false;
+volatile bool c64input_overlayOn;
 static bool helpWasDown = false;
 
 // A C64 key: column (CIA1 port A bit) * 8 + row (port B bit). WITH_SHIFT
@@ -110,6 +113,7 @@ static bool helpWasDown = false;
 #define C64_RUNSTOP K(7, 7)
 
 #define ST_F9 0x43
+#define ST_KEYPAD_OPEN 0x63  // keypad '(': diagnostic overlay on/off
 #define ST_HELP 0x62
 
 // ST scancode -> C64 key.
@@ -206,6 +210,12 @@ static void applyState(const uint8_t *keys) {
   bool f9Down = keyDown(keys, ST_F9);
   if (f9Down && !f9WasDown) swapPorts = !swapPorts;
   f9WasDown = f9Down;
+
+  bool overlayKeyDown = keyDown(keys, ST_KEYPAD_OPEN);
+  if (overlayKeyDown && !overlayKeyWasDown) {
+    c64input_overlayOn = !c64input_overlayOn;
+  }
+  overlayKeyWasDown = overlayKeyDown;
 
   bool helpDown = keyDown(keys, ST_HELP);
   if (helpDown && !helpWasDown) c64input_restorePressed = true;

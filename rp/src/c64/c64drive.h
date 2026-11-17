@@ -45,6 +45,10 @@ bool c64drive_mount(const char *name);
 // The mounted image's file name, or NULL.
 const char *c64drive_mountedName(void);
 
+// Core 0: how many LOADs were served, and the last one's result (0 or a
+// KERNAL error number).
+void c64drive_getLoadStats(unsigned *count, int *lastResult);
+
 // Core 0: serve a pending LOAD. Call from the main loop.
 void c64drive_poll(void);
 

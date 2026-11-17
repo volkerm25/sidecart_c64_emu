@@ -29,6 +29,8 @@ static bool mounted;
 static unsigned imageTracks;
 static char mountedName[64];
 static uint8_t sector[SECTOR_SIZE];
+static unsigned loadCount;
+static int lastLoadResult;
 
 // A LOAD handed from core 1 to core 0.
 enum { REQUEST_IDLE, REQUEST_PENDING, REQUEST_DONE };
@@ -105,6 +107,11 @@ bool c64drive_mount(const char *name) {
 }
 
 const char *c64drive_mountedName(void) { return mounted ? mountedName : NULL; }
+
+void c64drive_getLoadStats(unsigned *count, int *lastResult) {
+  *count = loadCount;
+  *lastResult = lastLoadResult;
+}
 
 static unsigned sectorsPerTrack(unsigned track) {
   if (track <= 17) return 21;
@@ -328,6 +335,8 @@ void c64drive_poll(void) {
   if (request.state != REQUEST_PENDING) return;
   __dmb();
   serveRequest();
+  loadCount++;
+  lastLoadResult = request.result;
   __dmb();
   request.state = REQUEST_DONE;
 }

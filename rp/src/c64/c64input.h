@@ -43,6 +43,8 @@ extern volatile uint8_t c64input_keyMatrix[8];
 extern volatile uint16_t c64input_pad;
 // RESTORE was pressed; core 1 raises the NMI and clears it.
 extern volatile bool c64input_restorePressed;
+// The user wants the diagnostic overlay (keypad '(' toggles it).
+extern volatile bool c64input_overlayOn;
 
 // Core 0: register the command handler. Call after chandler_init().
 void c64input_init(void);
