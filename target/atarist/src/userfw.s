@@ -19,7 +19,15 @@
 ; copied again on that screen's next pass.
 ;
 ; A full screen of changes takes about 19 ms to copy (25 frames/s on the
-; ST); a few changed lines leave it at 50. Esc returns to the desktop.
+; ST); a few changed lines leave it at 50.
+;
+; Keyboard and joysticks: the viewer takes over the ACIA interrupt ($118)
+; with a handler that keeps one bit per scancode, and puts the IKBD into
+; joystick event mode (mouse off). The handler is copied into the RAM block,
+; so that its state, behind it, is reachable PC-relative. Whenever the state
+; changed, the main loop sends all of it, 16 bytes, as C64INPUT_CMD; the RP
+; maps it onto the C64 (rp/src/c64/c64input.h has the layout). F10 returns
+; to the desktop.
 
 	include inc/sidecart_layout.s
 	include inc/sidecart_macros.s
@@ -35,22 +43,41 @@ VIDEO_PALETTE_ADDR	equ VIDEO_FRAME_ADDR+2
 VIDEO_STAMPS_ADDR	equ VIDEO_PALETTE_ADDR+32
 
 ; RAM block (Malloc): the viewer's state first (indexed accesses reach only
-; 127 bytes), then the second screen, 256-byte aligned inside its span.
+; 127 bytes), then the copy of the ACIA handler with its variables, then the
+; second screen, 256-byte aligned inside its span.
 ST_PALETTE_SAVE		equ 0				; 16 words, the desktop's palette
 ST_SCREENS		equ ST_PALETTE_SAVE+32		; 2 longs: screen 0 (TOS's), screen 1
 ST_HELD			equ ST_SCREENS+8		; 2 words: frame number each screen holds
 ST_FULL			equ ST_HELD+4			; 2 words: not 0 = copy every line
 ST_BACK			equ ST_FULL+4			; word: 0 or 2, the screen being drawn
 ST_PENDING		equ ST_BACK+2			; word: frame number read before the pass
-ST_STATE_SIZE		equ ST_PENDING+2
-RAM_BUFFER_SIZE		equ ST_STATE_SIZE+VIDEO_SCREEN_SIZE+256
+ST_OLD_ACIA		equ ST_PENDING+2		; long: TOS's ACIA vector
+ST_IRQ			equ ST_OLD_ACIA+4		; the handler's copy
+ST_IRQ_VARS		equ ST_IRQ+(irq_vars-irq_start)
+ST_SCREEN_SPAN		equ ST_IRQ+(irq_end-irq_start)
+RAM_BUFFER_SIZE		equ ST_SCREEN_SPAN+VIDEO_SCREEN_SIZE+256
+
+; The handler's variables (offsets from irq_vars).
+V_KEYS			equ 0				; 16 bytes, one bit per scancode
+V_CHANGED		equ 16				; byte: not 0 = state to send
+V_SKIP			equ 17				; byte: packet bytes still to come
+V_TARGET		equ 18				; byte: key byte for the joystick byte
+V_SIZE			equ 20
+
+C64INPUT_CMD		equ $6401			; must match rp/src/c64/c64input.h
+SCAN_F10		equ $44
+ACIA_VECTOR		equ $118
+IKBD_CTRL		equ $fffffc00
+IKBD_DATA		equ $fffffc02
+MIDI_CTRL		equ $fffffc04
+MIDI_DATA		equ $fffffc06
+MFP_ISRB		equ $fffffa11
+XB_Ikbdws		equ 25
 
 XB_Physbase		equ 2
 XB_Getrez		equ 4
 XB_Setpalette		equ 6
-B_Bconstat		equ 1
 CON			equ 2
-KEY_ESC			equ 27
 FRCLOCK			equ $466		; VBL counter
 VIDEO_BASE_HI		equ $ffff8201
 VIDEO_BASE_MID		equ $ffff8203
@@ -86,7 +113,7 @@ userfw:
 .mem_ok:
 	move.l	d0, a4			; a4 = RAM block (kept, except in the copy loop)
 	move.l	d6, ST_SCREENS(a4)
-	add.l	#ST_STATE_SIZE+255, d0
+	add.l	#ST_SCREEN_SPAN+255, d0
 	clr.b	d0
 	move.l	d0, ST_SCREENS+4(a4)
 	move.w	#1, ST_FULL(a4)
@@ -106,6 +133,26 @@ userfw:
 	addq.w	#1, d7
 	cmp.w	#16, d7
 	bne.s	.save_pal
+
+	; The ACIA handler: copy it with its (zeroed) variables, put the IKBD
+	; into joystick event mode, then take the vector.
+	lea	irq_start(pc), a0
+	lea	ST_IRQ(a4), a1
+	move.w	#(irq_end-irq_start)/2-1, d0
+.copy_irq:
+	move.w	(a0)+, (a1)+
+	dbra	d0, .copy_irq
+	pea	ikbd_joystick_mode(pc)
+	move.w	#1, -(sp)		; 2 bytes
+	move.w	#XB_Ikbdws, -(sp)
+	trap	#14
+	addq.l	#8, sp
+	move.w	sr, -(sp)
+	move.w	#$2700, sr
+	move.l	ACIA_VECTOR.w, ST_OLD_ACIA(a4)
+	lea	ST_IRQ(a4), a0
+	move.l	a0, ACIA_VECTOR.w
+	move.w	(sp)+, sr
 
 .frame:
 	move.w	ST_BACK(a4), d0
@@ -151,18 +198,35 @@ userfw:
 	movem.l	d0-d7, PALETTE_REGS.w
 	eori.w	#2, ST_BACK(a4)
 
-	; Esc leaves; other keys are dropped for now.
-	move.w	#CON, -(sp)
-	move.w	#B_Bconstat, -(sp)
-	trap	#13
-	addq.l	#4, sp
+	; F10 leaves. Otherwise send the key and joystick state if it changed;
+	; the flag is cleared before the state is read, so a change in between
+	; is sent on the next pass. A failed send is retried there too.
+	lea	ST_IRQ_VARS(a4), a3
+	btst	#SCAN_F10&7, V_KEYS+(SCAN_F10>>3)(a3)
+	bne.s	.leave
+	tst.b	V_CHANGED(a3)
+	beq	.frame
+	clr.b	V_CHANGED(a3)
+	movem.l	V_KEYS(a3), d3-d6
+	send_sync C64INPUT_CMD,16
 	tst.w	d0
 	beq	.frame
-	bsr	wait_key
-	cmp.b	#KEY_ESC, d0
-	bne	.frame
+	lea	ST_IRQ_VARS(a4), a3
+	st	V_CHANGED(a3)
+	bra	.frame
 
-	; Back to the desktop: TOS's screen and palette, free the block.
+.leave:
+	; Back to the desktop: TOS's ACIA handler and mouse, TOS's screen and
+	; palette, free the block.
+	move.w	sr, -(sp)
+	move.w	#$2700, sr
+	move.l	ST_OLD_ACIA(a4), ACIA_VECTOR.w
+	move.w	(sp)+, sr
+	pea	ikbd_mouse_mode(pc)
+	clr.w	-(sp)			; 1 byte
+	move.w	#XB_Ikbdws, -(sp)
+	trap	#14
+	addq.l	#8, sp
 	move.l	ST_SCREENS(a4), d0
 	bsr	set_screen
 	pea	ST_PALETTE_SAVE(a4)
@@ -207,6 +271,88 @@ wait_vbl:
 	cmp.l	FRCLOCK.w, d0
 	beq.s	.wait
 	rts
+
+; ACIA interrupt handler (keyboard, MIDI). Runs as a copy in the RAM block;
+; irq_vars travels with it. Keys set or clear their bit in V_KEYS; joystick
+; packets ($FE joystick 0, $FF joystick 1) go to key bytes 14 and 15 (layout
+; in rp/src/c64/c64input.h); other packets are skipped. MIDI bytes are
+; dropped. TOS runs the MFP in software end-of-interrupt mode.
+irq_start:
+	movem.l	d0-d2/a0, -(sp)
+	lea	irq_vars(pc), a0
+.next:
+	btst	#0, IKBD_CTRL.w
+	beq	.midi
+	moveq	#0, d0
+	move.b	IKBD_DATA.w, d0
+	tst.b	V_SKIP(a0)
+	beq.s	.fresh
+	subq.b	#1, V_SKIP(a0)
+	move.b	V_TARGET(a0), d1
+	beq.s	.next			; a byte of a skipped packet
+	clr.b	V_TARGET(a0)
+	cmp.b	#15, d1
+	beq.s	.joy1
+	move.b	d0, d2			; joystick 0: directions to bits 3-6
+	and.b	#$0f, d2
+	lsl.b	#3, d2
+	and.b	#$80, d0
+	or.b	d0, d2
+	move.b	V_KEYS+14(a0), d0
+	and.b	#$07, d0
+	or.b	d2, d0
+	move.b	d0, V_KEYS+14(a0)
+	bra.s	.changed
+.joy1:
+	move.b	d0, V_KEYS+15(a0)
+	bra.s	.changed
+.fresh:
+	cmp.b	#$f6, d0
+	bhs.s	.header
+	move.w	d0, d1
+	and.w	#$7f, d1		; scancode; its bit number, mod 8
+	move.w	d1, d2
+	lsr.w	#3, d2			; its byte
+	tst.b	d0
+	bmi.s	.release
+	bset	d1, V_KEYS(a0,d2.w)
+	bra.s	.changed
+.release:
+	bclr	d1, V_KEYS(a0,d2.w)
+.changed:
+	st	V_CHANGED(a0)
+	bra.s	.next
+.header:
+	sub.b	#$f6, d0
+	move.b	irq_packet_bytes(pc,d0.w), V_SKIP(a0)
+	cmp.b	#$fe-$f6, d0
+	blo	.next
+	add.b	#14-($fe-$f6), d0	; $FE -> key byte 14, $FF -> 15
+	move.b	d0, V_TARGET(a0)
+	bra	.next
+.midi:
+	btst	#0, MIDI_CTRL.w
+	beq.s	.done
+	tst.b	MIDI_DATA.w
+	bra	.next
+.done:
+	movem.l	(sp)+, d0-d2/a0
+	bclr	#6, MFP_ISRB.w
+	rte
+; Bytes that follow each header $F6..$FF.
+irq_packet_bytes:
+	dc.b	7, 5, 2, 2, 2, 2, 6, 2, 1, 1
+	even
+irq_vars:
+	ds.b	V_SIZE
+irq_end:
+
+; IKBD commands: mouse off, joystick event reporting; back to the mouse.
+ikbd_joystick_mode:
+	dc.b	$12, $14
+ikbd_mouse_mode:
+	dc.b	$08
+	even
 
 ; Wait for a key; ASCII code in d0.b.
 wait_key:

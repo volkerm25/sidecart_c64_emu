@@ -2,7 +2,8 @@
  * File: c64host.cpp
  * Description: Runs the MCUME pico64 C64 core on core 1 of the RP2040 and
  * implements the MCUME platform API (emuapi.h) the core calls. The picture goes to
- * the ST through c64video; no sound, no input, no files yet. The core runs
+ * the ST through c64video, keyboard and joysticks come from it through
+ * c64input; no sound, no files yet. The core runs
  * unthrottled and the host measures how long frames take.
  * License: GPL v3
  */
@@ -16,6 +17,7 @@
 #include "pico/stdlib.h"
 
 extern "C" {
+#include "c64input.h"
 #include "c64video.h"
 #include "emuapi.h"
 }
@@ -87,6 +89,10 @@ extern "C" void emu_DrawLine16(unsigned short *VBuf, int width, int height,
 // starts afresh instead of racing to catch up.
 extern "C" void emu_DrawVsync(void) {
   c64video_frameEnd(cpu.vic.R[0x20]);
+  if (c64input_restorePressed) {
+    c64input_restorePressed = false;
+    cpu_nmi();
+  }
   uint32_t now = time_us_32();
   uint32_t busy = now - frameStartUs;
   busyUs += busy;
@@ -115,7 +121,8 @@ extern "C" void emu_DrawVsync(void) {
   frameStartUs = time_us_32();
 }
 
-// No input yet.
+// Keyboard and joysticks reach the core through c64input (c64machine.cpp);
+// these MCUME entry points are not used.
 extern "C" int emu_GetPad(void) { return 0; }
 extern "C" int emu_ReadI2CKeyboard(void) { return 0; }
 extern "C" unsigned char emu_ReadI2CKeyboard2(int row) {

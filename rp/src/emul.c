@@ -13,6 +13,7 @@
 // inclusw in the C file to avoid multiple definitions
 #include "aconfig.h"
 #include "c64host.h"
+#include "c64input.h"
 #include "chandler.h"
 #include "commemul.h"
 #include "constants.h"
@@ -543,6 +544,7 @@ void emul_start() {
   }
   chandler_init();
   chandler_addCB(term_command_cb);
+  c64input_init();
 
   // After this point, the remote computer can execute the code
 
