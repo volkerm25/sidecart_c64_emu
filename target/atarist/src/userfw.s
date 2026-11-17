@@ -24,11 +24,15 @@
 ; Keyboard and joystick: the viewer takes over the ACIA interrupt ($118)
 ; with a handler that keeps one bit per scancode. The IKBD stays in TOS's
 ; mode: mouse packets for the mouse port, which the handler skips, and
-; joystick events for the joystick port. The handler is copied into the RAM block,
-; so that its state, behind it, is reachable PC-relative. Whenever the state
-; changed, the main loop sends all of it, 16 bytes, as C64INPUT_CMD; the RP
-; maps it onto the C64 (rp/src/c64/c64input.h has the layout). F10 returns
-; to the desktop.
+; joystick events for the joystick port. The handler is copied into the RAM
+; block, so that its state, behind it, is reachable PC-relative. Whenever the
+; state changed, the main loop sends all of it, 16 bytes, as C64INPUT_CMD;
+; the RP maps it onto the C64 (rp/src/c64/c64input.h has the layout). F10
+; returns to the desktop.
+;
+; Sound: the RP turns the SID into YM2149 registers once per C64 frame and
+; keeps them in the cartridge window (rp/src/c64/c64sid.h); a routine in the
+; VBL queue writes them into the YM2149 at every VBL.
 
 	include inc/sidecart_layout.s
 	include inc/sidecart_macros.s
@@ -42,6 +46,8 @@ VIDEO_SCREEN_ADDR	equ APP_FREE_ADDR
 VIDEO_FRAME_ADDR	equ VIDEO_SCREEN_ADDR+VIDEO_SCREEN_SIZE
 VIDEO_PALETTE_ADDR	equ VIDEO_FRAME_ADDR+2
 VIDEO_STAMPS_ADDR	equ VIDEO_PALETTE_ADDR+32
+; YM2149 registers 0..11, one byte each; must match rp/src/c64/c64sid.h.
+SOUND_YM_ADDR		equ VIDEO_STAMPS_ADDR+VIDEO_LINES*2
 
 ; RAM block (Malloc): the viewer's state first (indexed accesses reach only
 ; 127 bytes), then the copy of the ACIA handler with its variables, then the
@@ -53,7 +59,8 @@ ST_FULL			equ ST_HELD+4			; 2 words: not 0 = copy every line
 ST_BACK			equ ST_FULL+4			; word: 0 or 2, the screen being drawn
 ST_PENDING		equ ST_BACK+2			; word: frame number read before the pass
 ST_OLD_ACIA		equ ST_PENDING+2		; long: TOS's ACIA vector
-ST_IRQ			equ ST_OLD_ACIA+4		; the handler's copy
+ST_VBL_SLOT		equ ST_OLD_ACIA+4		; long: our VBL queue slot, or 0
+ST_IRQ			equ ST_VBL_SLOT+4		; the handler's copy
 ST_IRQ_VARS		equ ST_IRQ+(irq_vars-irq_start)
 ST_SCREEN_SPAN		equ ST_IRQ+(irq_end-irq_start)
 RAM_BUFFER_SIZE		equ ST_SCREEN_SPAN+VIDEO_SCREEN_SIZE+256
@@ -73,6 +80,9 @@ IKBD_DATA		equ $fffffc02
 MIDI_CTRL		equ $fffffc04
 MIDI_DATA		equ $fffffc06
 MFP_ISRB		equ $fffffa11
+NVBLS			equ $454			; number of VBL queue slots
+VBLQUEUE		equ $456			; pointer to the VBL queue
+YM_SELECT		equ $ffff8800
 
 XB_Physbase		equ 2
 XB_Getrez		equ 4
@@ -149,6 +159,24 @@ userfw:
 	move.l	a0, ACIA_VECTOR.w
 	move.w	(sp)+, sr
 
+	; The YM2149 player goes into the first free VBL queue slot.
+	clr.l	ST_VBL_SLOT(a4)
+	move.w	NVBLS.w, d0
+	subq.w	#1, d0
+	bmi.s	.no_vbl
+	move.l	VBLQUEUE.w, a0
+.find_vbl:
+	tst.l	(a0)
+	beq.s	.got_vbl
+	addq.l	#4, a0
+	dbra	d0, .find_vbl
+	bra.s	.no_vbl
+.got_vbl:
+	move.l	a0, ST_VBL_SLOT(a4)
+	lea	ym_vbl(pc), a1
+	move.l	a1, (a0)
+.no_vbl:
+
 .frame:
 	move.w	ST_BACK(a4), d0
 	move.w	VIDEO_FRAME_ADDR, ST_PENDING(a4)
@@ -211,8 +239,14 @@ userfw:
 	bra	.frame
 
 .leave:
-	; Back to the desktop: TOS's ACIA handler, screen and palette, free the
-	; block.
+	; Back to the desktop: no more sound, TOS's ACIA handler, screen and
+	; palette, free the block.
+	move.l	ST_VBL_SLOT(a4), d0
+	beq.s	.no_vbl_slot
+	move.l	d0, a0
+	clr.l	(a0)
+.no_vbl_slot:
+	bsr	ym_silence
 	move.w	sr, -(sp)
 	move.w	#$2700, sr
 	move.l	ST_OLD_ACIA(a4), ACIA_VECTOR.w
@@ -229,6 +263,53 @@ userfw:
 	trap	#1
 	addq.l	#6, sp
 	print	msg_cls(pc)
+	rts
+
+; VBL queue routine: YM2149 registers 0-10 from the cartridge window into
+; the chip. Register 7 keeps the chip's I/O port direction bits (6, 7);
+; registers 14 and 15 (floppy, printer) are not touched. Interrupts are off
+; while it selects and writes, since TOS's interrupt code selects registers
+; too (port A: floppy). TOS saves all registers around the queue.
+ym_vbl:
+	lea	SOUND_YM_ADDR, a0
+	lea	YM_SELECT.w, a1
+	moveq	#0, d0
+	move.w	sr, d2
+	or.w	#$0700, sr
+.reg:
+	move.b	d0, (a1)
+	move.b	(a0)+, d1
+	cmp.b	#7, d0
+	bne.s	.write
+	and.b	#$3f, d1
+	move.b	(a1), d3		; the register's current value
+	and.b	#$c0, d3
+	or.b	d3, d1
+.write:
+	move.b	d1, 2(a1)
+	addq.b	#1, d0
+	cmp.b	#11, d0
+	bne.s	.reg
+	move.w	d2, sr
+	rts
+
+; Silence the YM2149: tone and noise off, volumes 0. Destroys d0-d2, a1.
+ym_silence:
+	lea	YM_SELECT.w, a1
+	move.w	sr, d2
+	or.w	#$0700, sr
+	move.b	#7, (a1)
+	move.b	(a1), d1
+	or.b	#$3f, d1
+	move.b	d1, 2(a1)
+	moveq	#8, d0
+.vol:
+	move.b	d0, (a1)
+	move.b	#0, 2(a1)
+	addq.b	#1, d0
+	cmp.b	#11, d0
+	bne.s	.vol
+	move.w	d2, sr
 	rts
 
 ; Copy one 160-byte line from a0 to a1 and advance both. Destroys d0-d2,

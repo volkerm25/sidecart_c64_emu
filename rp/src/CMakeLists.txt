@@ -162,10 +162,10 @@ pico_add_extra_outputs(${PROJECT_NAME})
 # reSID, MCUME's display/ platform layer and its c64.cpp and patches.cpp
 # (replaced by c64/c64machine.cpp) are not built.
 set(MCUME_PICO64_DIR ${CMAKE_CURRENT_LIST_DIR}/../../third_party/MCUME/MCUME_pico/pico64)
-# cpu.cpp and vic.cpp are compiled from copies with fixes applied
+# cpu.cpp, vic.cpp and pla.cpp are compiled from copies with fixes applied
 # (c64/patch_mcume.cmake explains them).
 set(MCUME_PATCHED_DIR ${CMAKE_CURRENT_BINARY_DIR}/mcume)
-foreach(patched cpu.cpp vic.cpp)
+foreach(patched cpu.cpp vic.cpp pla.cpp)
     add_custom_command(
         OUTPUT ${MCUME_PATCHED_DIR}/${patched}
         COMMAND ${CMAKE_COMMAND}
@@ -180,7 +180,7 @@ set(C64_CORE_SOURCES
     ${MCUME_PICO64_DIR}/cia1.cpp
     ${MCUME_PICO64_DIR}/cia2.cpp
     ${MCUME_PATCHED_DIR}/cpu.cpp
-    ${MCUME_PICO64_DIR}/pla.cpp
+    ${MCUME_PATCHED_DIR}/pla.cpp
     ${MCUME_PICO64_DIR}/timerutil.cpp
     ${MCUME_PATCHED_DIR}/vic.cpp)
 set(C64_HOST_SOURCES
@@ -194,12 +194,13 @@ set_source_files_properties(${C64_CORE_SOURCES} ${C64_HOST_SOURCES} PROPERTIES
 set_source_files_properties(${C64_CORE_SOURCES}
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64roms.cpp PROPERTIES COMPILE_OPTIONS "-w")
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/c64)
-# The ST screen converter, the input mapping and the drive need only the
-# template's headers.
+# The ST screen converter, the input mapping, the drive and the SID need
+# only the template's headers.
 target_sources(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64video.c
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64input.c
-    ${CMAKE_CURRENT_LIST_DIR}/c64/c64drive.c)
+    ${CMAKE_CURRENT_LIST_DIR}/c64/c64drive.c
+    ${CMAKE_CURRENT_LIST_DIR}/c64/c64sid.c)
 # The emulator runs without Wi-Fi (see lwipopts.h and emul.c).
 add_compile_definitions(C64_NO_WIFI=1)
 # C64_ROMS_IN_RAM=1 in the environment of build.sh serves the C64 ROMs from

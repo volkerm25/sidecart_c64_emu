@@ -1,10 +1,11 @@
 /**
  * File: c64host.cpp
  * Description: Runs the MCUME pico64 C64 core on core 1 of the RP2040 and
- * implements the MCUME platform API (emuapi.h) the core calls. The picture goes to
- * the ST through c64video, keyboard and joysticks come from it through
- * c64input; no sound, no files yet. The core runs
- * unthrottled and the host measures how long frames take.
+ * implements the MCUME platform API (emuapi.h) the core calls. The picture
+ * goes to the ST through c64video, keyboard and joysticks come from it
+ * through c64input, sound goes to its YM2149 through c64sid, and drive 8
+ * reads D64 images through c64drive. The core is paced to the PAL frame
+ * rate, and the host measures how long frames take.
  * License: GPL v3
  */
 
@@ -19,6 +20,7 @@
 extern "C" {
 #include "c64drive.h"
 #include "c64input.h"
+#include "c64sid.h"
 #include "c64video.h"
 #include "emuapi.h"
 }
@@ -90,6 +92,7 @@ extern "C" void emu_DrawLine16(unsigned short *VBuf, int width, int height,
 // starts afresh instead of racing to catch up.
 extern "C" void emu_DrawVsync(void) {
   c64video_frameEnd(cpu.vic.R[0x20]);
+  c64sid_frame();
   if (c64input_restorePressed) {
     c64input_restorePressed = false;
     cpu_nmi();
@@ -166,6 +169,7 @@ extern "C" void c64host_start(void) {
   c64roms_copyToRam();
 #endif
   c64video_init();
+  c64sid_init();
   c64drive_init(cpu.RAM);
   multicore_launch_core1(core1Main);
   c64video_startConverter();

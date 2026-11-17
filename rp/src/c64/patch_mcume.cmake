@@ -18,6 +18,10 @@
 # IRQs that acknowledged a collision while a raster IRQ was pending lost
 # that IRQ, and since the raster flag stayed set, every later one too: the
 # game hung waiting for it. Bit 7 is now (flags & mask) != 0, as on a VIC.
+#
+# pla.cpp: SID accesses. Without reSID (HAS_SND unset) writes went nowhere
+# and reads returned 0; they now go to c64/c64sid.c, which turns the SID
+# into YM2149 registers.
 
 file(READ "${MCUME_SOURCE}" source)
 get_filename_component(name "${MCUME_SOURCE}" NAME)
@@ -70,6 +74,16 @@ mcume_replace(
 mcume_replace(
     "    case 0x1A : //IRQ Mask\n      cpu.vic.R[address] = value & 0x0f;\n      break;"
     "    case 0x1A : //IRQ Mask\n      cpu.vic.R[address] = value & 0x0f;\n      if (cpu.vic.R[0x19] & cpu.vic.R[0x1a] & 0x0f) cpu.vic.R[0x19] |= 0x80;\n      else cpu.vic.R[0x19] &= 0x7f;\n      break;")
+
+elseif(name STREQUAL "pla.cpp")
+
+mcume_replace(
+    "uint8_t r_sid(uint32_t address)\t\t{ return 0;}"
+    "extern \"C\" uint8_t c64sid_read(uint8_t reg);\nuint8_t r_sid(uint32_t address)\t\t{ return c64sid_read(address & 0x1F);}")
+
+mcume_replace(
+    "void w_sid( uint32_t address, uint8_t value )\t{ }"
+    "extern \"C\" void c64sid_write(uint8_t reg, uint8_t value);\nvoid w_sid( uint32_t address, uint8_t value )\t{ c64sid_write(address & 0x1F, value); }")
 
 else()
     message(FATAL_ERROR "patch_mcume: no fixes for ${name}")
