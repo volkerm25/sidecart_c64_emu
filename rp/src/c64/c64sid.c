@@ -20,6 +20,7 @@
 #include <assert.h>
 #include <math.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "chandler.h"
 #include "constants.h"
@@ -66,12 +67,20 @@ void c64sid_init(void) {
     int v = (int)lroundf(15.0f + 2.0f * log2f((float)amp / 255.0f));
     ymVolume[amp] = (uint8_t)(v < 0 ? 0 : (v > 15 ? 15 : v));
   }
+  memset(regs, 0, sizeof(regs));
   for (int v = 0; v < 3; v++) {
     voices[v].phase = RELEASE;
     voices[v].level = 0;
     voices[v].gateRose = false;
   }
   c64sid_frame();
+}
+
+void c64sid_silence(void) {
+  volatile uint16_t *dst = WINDOW_WORDS(C64SID_YM_OFFSET);
+  dst[3] = 0x003F;  // register 6: noise period 0, register 7: all off
+  dst[4] = 0x0000;  // volumes A, B
+  dst[5] = 0x0000;  // volume C, register 11
 }
 
 void c64sid_write(uint8_t reg, uint8_t value) {

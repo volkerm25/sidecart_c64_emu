@@ -56,10 +56,9 @@ static uint16_t renderingFrame;
 #define C64VIDEO_LINE_PIXELS 320
 #define C64VIDEO_POST_FRAME_END 0x80000000u
 static uint16_t slotPixels[C64VIDEO_SLOTS][C64VIDEO_LINE_PIXELS];
-// The diagnostic overlay covers the top C64VIDEO_OVERLAY_LINES lines while
-// it is on; the converter leaves them alone.
-#define C64VIDEO_OVERLAY_LINES (C64VIDEO_OVERLAY_ROWS * 8)
-static volatile bool overlayActive;
+// Text drawn over the picture (c64video_setText) covers the top textLines
+// lines; the converter leaves them alone.
+static volatile int textLines;
 extern const unsigned char rom_characters[4096];  // MCUME's character ROM
 static volatile bool slotBusy[C64VIDEO_SLOTS];
 static unsigned nextSlot;  // core 1 only
@@ -99,7 +98,7 @@ void c64video_init(void) {
 
 static void __not_in_flash_func(convertLine)(int line,
                                              const uint16_t *pixels) {
-  if (overlayActive && line < C64VIDEO_OVERLAY_LINES) return;
+  if (line < textLines) return;
   volatile uint16_t *dst =
       WINDOW_WORDS(C64VIDEO_SCREEN_OFFSET + line * C64VIDEO_LINE_BYTES);
   uint16_t changed = 0;
@@ -135,26 +134,32 @@ static void __not_in_flash_func(frameEnd)(uint8_t borderColour) {
   setBorder(borderColour & 15u);
 }
 
-// ASCII to a C64 screen code (upper case set); anything else is a space.
+// ASCII to a screen code of the C64's second character set (upper and lower
+// case); anything it lacks is a space, '_' a line at the bottom.
+#define CHARSET2 0x800
 static uint8_t screenCode(char c) {
-  if (c >= 'A' && c <= 'Z') return (uint8_t)(c - 'A' + 1);
   if (c >= 'a' && c <= 'z') return (uint8_t)(c - 'a' + 1);
+  if (c >= 'A' && c <= 'Z') return (uint8_t)(c - 'A' + 65);
   if (c >= 0x20 && c < 0x40) return (uint8_t)c;
+  if (c == '@') return 0;
+  if (c == '_') return 100;
   return 0x20;
 }
 
-void c64video_setOverlay(const char *const rows[C64VIDEO_OVERLAY_ROWS]) {
-  if (rows == NULL) {
+void c64video_setText(const char *const rows[], int count, int invertRow) {
+  if (rows == NULL || count <= 0) {
     // The converter redraws the lines, and stamps them since they differ.
-    overlayActive = false;
+    textLines = 0;
     return;
   }
-  overlayActive = true;
+  if (count > C64VIDEO_LINES / 8) count = C64VIDEO_LINES / 8;
+  textLines = count * 8;
   volatile uint16_t *stamps = WINDOW_WORDS(C64VIDEO_STAMPS_OFFSET);
   uint32_t irq = save_and_disable_interrupts();
-  for (int row = 0; row < C64VIDEO_OVERLAY_ROWS; row++) {
-    const char *text = rows[row];
+  for (int row = 0; row < count; row++) {
+    const char *text = rows[row] ? rows[row] : "";
     size_t len = strlen(text);
+    uint8_t invert = (row == invertRow) ? 0xFF : 0x00;
     for (int y = 0; y < 8; y++) {
       int line = row * 8 + y;
       volatile uint16_t *dst =
@@ -163,8 +168,10 @@ void c64video_setOverlay(const char *const rows[C64VIDEO_OVERLAY_ROWS]) {
         // Two characters per 16-pixel group, in ST colour 1 on colour 0.
         char left = ((size_t)(2 * group) < len) ? text[2 * group] : ' ';
         char right = ((size_t)(2 * group + 1) < len) ? text[2 * group + 1] : ' ';
-        uint8_t leftBits = rom_characters[screenCode(left) * 8 + y];
-        uint8_t rightBits = rom_characters[screenCode(right) * 8 + y];
+        uint8_t leftBits =
+            rom_characters[CHARSET2 + screenCode(left) * 8 + y] ^ invert;
+        uint8_t rightBits =
+            rom_characters[CHARSET2 + screenCode(right) * 8 + y] ^ invert;
         dst[0] = (uint16_t)((leftBits << 8) | rightBits);
         dst[1] = 0;
         dst[2] = 0;

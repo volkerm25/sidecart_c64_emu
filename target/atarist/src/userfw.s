@@ -27,8 +27,11 @@
 ; joystick events for the joystick port. The handler is copied into the RAM
 ; block, so that its state, behind it, is reachable PC-relative. Whenever the
 ; state changed, the main loop sends all of it, 16 bytes, as C64INPUT_CMD;
-; the RP maps it onto the C64 (rp/src/c64/c64input.h has the layout). F10
-; returns to the desktop.
+; the RP maps it onto the C64 (rp/src/c64/c64input.h has the layout).
+;
+; F10 opens the RP's disk menu over the picture. Its Q returns the ST to the
+; desktop: the RP counts Q presses in the cartridge window, and the viewer
+; leaves when the count differs from the one it saw at its start.
 ;
 ; Sound: the RP turns the SID into YM2149 registers once per C64 frame and
 ; keeps them in the cartridge window (rp/src/c64/c64sid.h); a routine in the
@@ -48,6 +51,8 @@ VIDEO_PALETTE_ADDR	equ VIDEO_FRAME_ADDR+2
 VIDEO_STAMPS_ADDR	equ VIDEO_PALETTE_ADDR+32
 ; YM2149 registers 0..11, one byte each; must match rp/src/c64/c64sid.h.
 SOUND_YM_ADDR		equ VIDEO_STAMPS_ADDR+VIDEO_LINES*2
+; Word: the disk menu's Q presses; must match rp/src/c64/c64menu.h.
+MENU_QUIT_ADDR		equ SOUND_YM_ADDR+12
 
 ; RAM block (Malloc): the viewer's state first (indexed accesses reach only
 ; 127 bytes), then the copy of the ACIA handler with its variables, then the
@@ -60,7 +65,8 @@ ST_BACK			equ ST_FULL+4			; word: 0 or 2, the screen being drawn
 ST_PENDING		equ ST_BACK+2			; word: frame number read before the pass
 ST_OLD_ACIA		equ ST_PENDING+2		; long: TOS's ACIA vector
 ST_VBL_SLOT		equ ST_OLD_ACIA+4		; long: our VBL queue slot, or 0
-ST_IRQ			equ ST_VBL_SLOT+4		; the handler's copy
+ST_QUIT			equ ST_VBL_SLOT+4		; word: MENU_QUIT_ADDR at the start
+ST_IRQ			equ ST_QUIT+2			; the handler's copy
 ST_IRQ_VARS		equ ST_IRQ+(irq_vars-irq_start)
 ST_SCREEN_SPAN		equ ST_IRQ+(irq_end-irq_start)
 RAM_BUFFER_SIZE		equ ST_SCREEN_SPAN+VIDEO_SCREEN_SIZE+256
@@ -73,7 +79,6 @@ V_TARGET		equ 18				; byte: key byte for the joystick byte
 V_SIZE			equ 20
 
 C64INPUT_CMD		equ $6401			; must match rp/src/c64/c64input.h
-SCAN_F10		equ $44
 ACIA_VECTOR		equ $118
 IKBD_CTRL		equ $fffffc00
 IKBD_DATA		equ $fffffc02
@@ -129,6 +134,7 @@ userfw:
 	move.w	#1, ST_FULL(a4)
 	move.w	#1, ST_FULL+2(a4)
 	move.w	#2, ST_BACK(a4)		; draw into screen 1 while TOS's is shown
+	move.w	MENU_QUIT_ADDR, ST_QUIT(a4)
 
 	; Save the desktop's palette (Setcolor with -1 reads an entry).
 	lea	ST_PALETTE_SAVE(a4), a3
@@ -221,12 +227,14 @@ userfw:
 	movem.l	d0-d7, PALETTE_REGS.w
 	eori.w	#2, ST_BACK(a4)
 
-	; F10 leaves. Otherwise send the key and joystick state if it changed;
-	; the flag is cleared before the state is read, so a change in between
-	; is sent on the next pass. A failed send is retried there too.
-	lea	ST_IRQ_VARS(a4), a3
-	btst	#SCAN_F10&7, V_KEYS+(SCAN_F10>>3)(a3)
+	; Leave when the disk menu's Q count changed. Otherwise send the key
+	; and joystick state if it changed; the flag is cleared before the state
+	; is read, so a change in between is sent on the next pass. A failed
+	; send is retried there too.
+	move.w	MENU_QUIT_ADDR, d0
+	cmp.w	ST_QUIT(a4), d0
 	bne.s	.leave
+	lea	ST_IRQ_VARS(a4), a3
 	tst.b	V_CHANGED(a3)
 	beq	.frame
 	clr.b	V_CHANGED(a3)

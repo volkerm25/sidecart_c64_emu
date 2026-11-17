@@ -33,8 +33,13 @@
 extern "C" {
 #endif
 
-// Core 0: silence and publish. Call before core 1 starts.
+// Reset the SID (registers, envelopes) and publish silence: on core 0
+// before core 1 starts, or on core 1 when the C64 is reset.
 void c64sid_init(void);
+
+// Core 0, while core 1 is paused: publish silence (c64sid_frame publishes
+// the real registers again when core 1 runs).
+void c64sid_silence(void);
 
 // Core 1, from the C64 core: a write to SID register reg (0..31).
 void c64sid_write(uint8_t reg, uint8_t value);

@@ -53,6 +53,17 @@ void c64host_start(void);
 // would keep running and write into Booster's RAM.
 void c64host_stop(void);
 
+// Core 0: hold the C64 between two raster lines (true) or let it run on.
+// Pausing waits up to 50 ms until core 1 has stopped.
+void c64host_setPaused(bool paused);
+
+// Core 0: reset the C64 at the next raster line; with autostartAfter it then
+// types LOAD"*",8,1 at the BASIC prompt and RUN once that has loaded.
+void c64host_requestReset(bool autostartAfter);
+
+// Core 1, from the LOAD trap: a LOAD from drive 8 succeeded.
+void c64host_loadDone(void);
+
 // A copy of the current speed figures.
 void c64host_getStats(C64HostStats *stats);
 

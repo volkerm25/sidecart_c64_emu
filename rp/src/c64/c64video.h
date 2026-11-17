@@ -57,12 +57,11 @@ void c64video_startConverter(void);
 // slots are still being converted.
 void c64video_line(int line, const uint16_t *pixels);
 
-// Core 0: draw rows of text (C64VIDEO_OVERLAY_ROWS strings, up to 40
-// characters each) over the top of the picture, or with NULL remove them.
-// For diagnosis: it is drawn from core 0's main loop, so it shows even when
-// core 1 has stopped.
-#define C64VIDEO_OVERLAY_ROWS 3
-void c64video_setOverlay(const char *const rows[C64VIDEO_OVERLAY_ROWS]);
+// Core 0: draw count rows of text (up to 25, 40 characters each) over the
+// top of the picture, row invertRow in reverse video (-1: none), or with
+// NULL remove them. Drawn from core 0, so it shows even when core 1 has
+// stopped; the converter leaves those lines alone until it is removed.
+void c64video_setText(const char *const rows[], int count, int invertRow);
 
 // Core 1: the frame is complete. Core 0 publishes its number and takes the
 // border colour for the next one, after converting the frame's lines.

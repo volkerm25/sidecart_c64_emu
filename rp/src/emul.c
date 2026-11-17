@@ -16,6 +16,7 @@
 #include "c64drive.h"
 #include "c64host.h"
 #include "c64input.h"
+#include "c64menu.h"
 #include "c64video.h"
 #include "chandler.h"
 #include "commemul.h"
@@ -164,9 +165,9 @@ static void __not_in_flash_func(emul_pollTick)(void) {
 static void emul_updateOverlay(void) {
   static bool shown = false;
   static absolute_time_t next;
-  if (!c64input_overlayOn) {
+  if (!c64input_overlayOn || c64menu_isOpen()) {
     if (shown) {
-      c64video_setOverlay(NULL);
+      if (!c64menu_isOpen()) c64video_setText(NULL, 0, -1);
       shown = false;
     }
     return;
@@ -191,8 +192,8 @@ static void emul_updateOverlay(void) {
   snprintf(row2, sizeof(row2), "I%d V%02X/%02X C%02X/%02X T%02X R%03u/%03u",
            st.irqDisabled ? 1 : 0, st.vicIrq, st.vicMask, st.ciaIrq,
            st.ciaMask, st.ciaCra, st.rasterLine, st.rasterIrqLine);
-  const char *const rows[C64VIDEO_OVERLAY_ROWS] = {row0, row1, row2};
-  c64video_setOverlay(rows);
+  const char *const rows[] = {row0, row1, row2};
+  c64video_setText(rows, 3, -1);
   shown = true;
 }
 
@@ -777,6 +778,7 @@ void emul_start() {
 
   // Start the C64 core on core 1 (speed test: unthrottled, no output).
   c64host_start();
+  c64menu_init();
 
   DPRINTF("Start the app loop here\n");
   absolute_time_t nextNetworkPoll = get_absolute_time();
@@ -789,6 +791,7 @@ void emul_start() {
     chandler_loop();
     // A LOAD from drive 8 waits on core 1 until this serves it.
     c64drive_poll();
+    c64menu_poll();
     emul_updateOverlay();
     if (chandler_consumeStBoot()) {
       // A new ST session: nothing typed before the reset carries over, and

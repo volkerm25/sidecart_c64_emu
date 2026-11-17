@@ -80,6 +80,26 @@ bool c64drive_findImage(int index, char *name, int nameSize) {
   return found;
 }
 
+int c64drive_listImages(int start, char *names, int nameSize, int max) {
+  DIR dir;
+  FILINFO info;
+  if (f_opendir(&dir, C64DRIVE_FOLDER) != FR_OK) return 0;
+  int index = 0;
+  while (f_readdir(&dir, &info) == FR_OK && info.fname[0] != '\0') {
+    if ((info.fattrib & (AM_DIR | AM_HID | AM_SYS)) ||
+        !hasD64Extension(info.fname)) {
+      continue;
+    }
+    if (index >= start && index < start + max) {
+      snprintf(names + (index - start) * nameSize, (size_t)nameSize, "%s",
+               info.fname);
+    }
+    index++;
+  }
+  f_closedir(&dir);
+  return index;
+}
+
 bool c64drive_mount(const char *name) {
   if (mounted) {
     f_close(&image);

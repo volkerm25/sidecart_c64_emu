@@ -144,24 +144,100 @@ char *menuSelection(void) {
 // Host
 // ---------------------------------------------------------------------------
 
-static void core1Main(void) {
+// Requests from core 0, taken by core 1 between two raster lines.
+static volatile bool pauseRequested = false;
+static volatile bool pausedNow = false;
+static volatile int resetRequested = 0;  // RESET_NONE / _PLAIN / _AUTOSTART
+#define RESET_NONE 0
+#define RESET_PLAIN 1
+#define RESET_AUTOSTART 2
+
+// Autostart after a reset: type LOAD"*",8,1 once BASIC waits for input,
+// then RUN once that LOAD has finished. Core 1 only.
+enum { AUTOSTART_IDLE, AUTOSTART_WAIT_READY, AUTOSTART_WAIT_LOAD };
+static int autostart = AUTOSTART_IDLE;
+// The KERNAL's loop waiting for a key (GETIN at the BASIC prompt).
+#define KERNAL_WAIT_KEY_FIRST 0xE5CD
+#define KERNAL_WAIT_KEY_LAST 0xE5D6
+// "LOAD" abbreviated as L, shifted O, so the line fits the KERNAL's
+// 10-character keyboard buffer.
+static const uint8_t autostartLoad[] = {'L', 0xCF, '"', '*', '"',
+                                        ',', '8', ',', '1', 13};
+static const uint8_t autostartRun[] = {'R', 'U', 'N', 13};
+
+// Put keys into the KERNAL's keyboard buffer ($0277, count at $C6).
+static void typeKeys(const uint8_t *keys, int count) {
+  memcpy(&cpu.RAM[0x0277], keys, (size_t)count);
+  cpu.RAM[0xC6] = (uint8_t)count;
+}
+
+// Reset the C64 and make the VIC emit colour indices instead of RGB565:
+// the palette becomes 0..15, and the colours it already translated from
+// the registers ($D020-$D02E) are translated again.
+static void resetC64(void) {
   c64_Init();
-  // Make the VIC emit colour indices instead of RGB565: the palette becomes
-  // 0..15, and the colours it already translated from the registers
-  // ($D020-$D02E) are translated again.
   for (int i = 0; i < 16; i++) {
     cpu.vic.palette[i] = (uint16_t)i;
   }
   for (int i = 0; i < 15; i++) {
     cpu.vic.colors[i] = cpu.vic.R[0x20 + i] & 0x0f;
   }
+}
+
+// Called from the LOAD trap (core 1) when a LOAD from drive 8 succeeded.
+extern "C" void c64host_loadDone(void) {
+  if (autostart == AUTOSTART_WAIT_LOAD) {
+    typeKeys(autostartRun, sizeof(autostartRun));
+    autostart = AUTOSTART_IDLE;
+  }
+}
+
+static void core1Main(void) {
+  resetC64();
   windowStartUs = time_us_32();
   frameStartUs = windowStartUs;
   nextFrameUs = windowStartUs;
   hostRunning = true;
   while (true) {
     c64_Step();  // one raster line
+    if (pauseRequested) {
+      pausedNow = true;
+      while (pauseRequested) {
+        tight_loop_contents();
+      }
+      pausedNow = false;
+      // Start pacing afresh instead of racing to catch up.
+      nextFrameUs = time_us_32();
+      frameStartUs = nextFrameUs;
+    }
+    if (resetRequested != RESET_NONE) {
+      int request = resetRequested;
+      resetRequested = RESET_NONE;
+      resetC64();
+      c64sid_init();
+      autostart = (request == RESET_AUTOSTART) ? AUTOSTART_WAIT_READY
+                                               : AUTOSTART_IDLE;
+    }
+    if (autostart == AUTOSTART_WAIT_READY &&
+        cpu.pc >= KERNAL_WAIT_KEY_FIRST && cpu.pc <= KERNAL_WAIT_KEY_LAST) {
+      typeKeys(autostartLoad, sizeof(autostartLoad));
+      autostart = AUTOSTART_WAIT_LOAD;
+    }
   }
+}
+
+extern "C" void c64host_setPaused(bool paused) {
+  pauseRequested = paused;
+  if (!paused || !hostRunning) return;
+  // Wait (briefly) until core 1 has stopped between two raster lines.
+  absolute_time_t until = make_timeout_time_ms(50);
+  while (!pausedNow && absolute_time_diff_us(get_absolute_time(), until) > 0) {
+    tight_loop_contents();
+  }
+}
+
+extern "C" void c64host_requestReset(bool autostartAfter) {
+  resetRequested = autostartAfter ? RESET_AUTOSTART : RESET_PLAIN;
 }
 
 extern "C" void c64host_start(void) {

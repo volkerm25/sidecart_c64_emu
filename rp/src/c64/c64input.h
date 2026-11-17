@@ -49,6 +49,19 @@ extern volatile bool c64input_overlayOn;
 // Core 0: register the command handler. Call after chandler_init().
 void c64input_init(void);
 
+// A key press for the disk menu: the ST scancode, and whether a SHIFT key
+// was down.
+typedef struct {
+  uint8_t scancode;
+  bool shift;
+} C64InputKey;
+
+// Core 0: the next queued key press. False when there is none.
+bool c64input_nextKey(C64InputKey *key);
+
+// Core 0: while on, the C64 sees no keys and no joystick.
+void c64input_setMenuMode(bool on);
+
 #ifdef __cplusplus
 }
 #endif

@@ -23,7 +23,11 @@
  * the C64's port 1 shares its lines with the keyboard rows, so the keyboard
  * stopped working.
  *   F10         leaves the viewer (handled on the ST)
- *   keypad (    diagnostic overlay on/off (c64video_setOverlay)
+ *   keypad (    diagnostic overlay on/off (c64video_setText)
+ *
+ * Every key press is also queued as an event (c64input_nextKey) for the
+ * disk menu. While the menu is open (c64input_setMenuMode) the C64 sees no
+ * keys and no joystick.
  */
 
 #include "c64input.h"
@@ -39,6 +43,15 @@ volatile bool c64input_restorePressed;
 static bool swapPorts = false;
 static bool f9WasDown = false;
 static bool overlayKeyWasDown = false;
+static uint8_t previousKeys[16];
+static bool menuMode = false;
+
+// Key presses for the disk menu. Producer (the command callback) and
+// consumer (the menu) both run in core 0's main loop.
+#define KEY_QUEUE_SIZE 16
+static C64InputKey keyQueue[KEY_QUEUE_SIZE];
+static unsigned keyQueueHead;
+static unsigned keyQueueTail;
 volatile bool c64input_overlayOn;
 static bool helpWasDown = false;
 
@@ -193,7 +206,37 @@ static uint16_t joyBits(uint8_t ikbd) {
   return bits;
 }
 
+static void queueKeyPresses(const uint8_t *keys) {
+  bool shift = keyDown(keys, 0x2A) || keyDown(keys, 0x36);
+  for (unsigned scancode = 1; scancode < 0x73; scancode++) {
+    if (!keyDown(keys, scancode) || keyDown(previousKeys, scancode)) continue;
+    unsigned next = (keyQueueHead + 1u) % KEY_QUEUE_SIZE;
+    if (next == keyQueueTail) break;  // full: drop
+    keyQueue[keyQueueHead].scancode = (uint8_t)scancode;
+    keyQueue[keyQueueHead].shift = shift;
+    keyQueueHead = next;
+  }
+  for (unsigned i = 0; i < 16; i++) previousKeys[i] = keys[i];
+}
+
+bool c64input_nextKey(C64InputKey *key) {
+  if (keyQueueTail == keyQueueHead) return false;
+  *key = keyQueue[keyQueueTail];
+  keyQueueTail = (keyQueueTail + 1u) % KEY_QUEUE_SIZE;
+  return true;
+}
+
+void c64input_setMenuMode(bool on) {
+  menuMode = on;
+  if (on) {
+    for (unsigned col = 0; col < 8; col++) c64input_keyMatrix[col] = 0;
+    c64input_pad = 0;
+  }
+}
+
 static void applyState(const uint8_t *keys) {
+  queueKeyPresses(keys);
+  if (menuMode) return;  // the menu has the keys; the C64 sees none
   uint8_t matrix[8] = {0};
   for (unsigned scancode = 1; scancode < 0x73; scancode++) {
     if (!keyDown(keys, scancode) || !isMapped(scancode)) continue;

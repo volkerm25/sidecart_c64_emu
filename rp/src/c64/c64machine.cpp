@@ -16,6 +16,7 @@
 
 extern "C" {
 #include "c64drive.h"
+#include "c64host.h"
 #include "c64input.h"
 #include "emuapi.h"
 }
@@ -149,6 +150,7 @@ void patchLOAD(void) {
   // Print "LOADING", then finish like the KERNAL's own LOAD (X/Y = end).
   push16(KERNAL_LOAD_DONE - 1);
   cpu.pc = KERNAL_LOADING_MSG;
+  c64host_loadDone();
 }
 
 // No SAVE yet: on to the KERNAL's own (device not present for drive 8).
