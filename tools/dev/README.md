@@ -278,3 +278,16 @@ python3 tools/dev/download_harness.py                        # real downloads, c
   treat its answer as a floor).
 
 `logs/` and `builds/` are generated here and are gitignored.
+
+## C64 state dumps
+
+In the C64 viewer on the ST, keypad `)` pauses the C64 and writes its state
+(registers, VIC, both CIAs, 64 KB of RAM, colour RAM) to `/c64/c64dump.bin`
+on the SD card. `c64dump.py` reads such a file on the PC:
+
+```bash
+python3 tools/dev/c64dump.py c64dump.bin               # state and code at the PC
+python3 tools/dev/c64dump.py c64dump.bin dis 0801 40   # disassemble
+python3 tools/dev/c64dump.py c64dump.bin hex c000 100  # hex dump
+python3 tools/dev/c64dump.py c64dump.bin find 20d5ff   # search bytes
+```

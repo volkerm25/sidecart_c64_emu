@@ -45,6 +45,8 @@ extern volatile uint16_t c64input_pad;
 extern volatile bool c64input_restorePressed;
 // The user wants the diagnostic overlay (keypad '(' toggles it).
 extern volatile bool c64input_overlayOn;
+// The user asked for a dump of the C64 (keypad ')'); core 0 clears it.
+extern volatile bool c64input_dumpRequested;
 
 // Core 0: register the command handler. Call after chandler_init().
 void c64input_init(void);

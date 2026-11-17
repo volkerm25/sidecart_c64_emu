@@ -158,14 +158,32 @@ static void __not_in_flash_func(emul_pollTick)(void) {
 
 // The diagnostic overlay on the C64 picture (keypad '(' on the ST), redrawn
 // five times a second: frame count and 6510 state, the bytes at the PC, the
-// slowest frame, the LOADs served, and the interrupt state. Drawn from here, it shows even when
-// core 1 has stopped; then the frame count stands still.
+// slowest frame, the LOADs served, and the interrupt state. Drawn from here,
+// it shows even when core 1 has stopped; then the frame count stands still.
 #define OVERLAY_REFRESH_MS 200
+
+// Keypad ')' dumps the C64 to the SD card; a line says how that went.
+#define DUMP_PATH C64DRIVE_FOLDER "/c64dump.bin"
+#define DUMP_MESSAGE_MS 2000
+static char dumpMessage[41];
+static absolute_time_t dumpMessageUntil;
+
+static void emul_serviceDump(void) {
+  if (!c64input_dumpRequested) return;
+  c64input_dumpRequested = false;
+  bool ok = c64host_writeDump(DUMP_PATH);
+  snprintf(dumpMessage, sizeof(dumpMessage), "%s " DUMP_PATH,
+           ok ? "Dump saved:" : "Dump FAILED:");
+  dumpMessageUntil = make_timeout_time_ms(DUMP_MESSAGE_MS);
+}
 
 static void emul_updateOverlay(void) {
   static bool shown = false;
   static absolute_time_t next;
-  if (!c64input_overlayOn || c64menu_isOpen()) {
+  bool message = dumpMessage[0] != '\0' &&
+                 absolute_time_diff_us(get_absolute_time(), dumpMessageUntil) > 0;
+  if (!message) dumpMessage[0] = '\0';
+  if ((!c64input_overlayOn && !message) || c64menu_isOpen()) {
     if (shown) {
       if (!c64menu_isOpen()) c64video_setText(NULL, 0, -1);
       shown = false;
@@ -192,8 +210,12 @@ static void emul_updateOverlay(void) {
   snprintf(row2, sizeof(row2), "I%d V%02X/%02X C%02X/%02X T%02X R%03u/%03u",
            st.irqDisabled ? 1 : 0, st.vicIrq, st.vicMask, st.ciaIrq,
            st.ciaMask, st.ciaCra, st.rasterLine, st.rasterIrqLine);
-  const char *const rows[] = {row0, row1, row2};
-  c64video_setText(rows, 3, -1);
+  const char *const rows[] = {row0, row1, row2, dumpMessage};
+  if (!c64input_overlayOn) {
+    c64video_setText(&rows[3], 1, -1);  // just the dump message
+  } else {
+    c64video_setText(rows, message ? 4 : 3, -1);
+  }
   shown = true;
 }
 
@@ -792,6 +814,7 @@ void emul_start() {
     // A LOAD from drive 8 waits on core 1 until this serves it.
     c64drive_poll();
     c64menu_poll();
+    emul_serviceDump();
     emul_updateOverlay();
     if (chandler_consumeStBoot()) {
       // A new ST session: nothing typed before the reset carries over, and

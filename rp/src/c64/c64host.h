@@ -61,6 +61,10 @@ void c64host_setPaused(bool paused);
 // types LOAD"*",8,1 at the BASIC prompt and RUN once that has loaded.
 void c64host_requestReset(bool autostartAfter);
 
+// Core 0: pause the C64, write its state (registers, VIC, CIAs, RAM,
+// colour RAM; layout in c64host.cpp) to path on the SD card, let it run on.
+bool c64host_writeDump(const char *path);
+
 // Core 1, from the LOAD trap: a LOAD from drive 8 succeeded.
 void c64host_loadDone(void);
 

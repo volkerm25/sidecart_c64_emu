@@ -13,6 +13,7 @@
 
 #include <string.h>
 
+#include "ff.h"
 #include "hardware/timer.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
@@ -234,6 +235,59 @@ extern "C" void c64host_setPaused(bool paused) {
   while (!pausedNow && absolute_time_diff_us(get_absolute_time(), until) > 0) {
     tight_loop_contents();
   }
+}
+
+// Dump layout, all little endian:
+//   0   "C64DUMP1"
+//   8   PC (2), A, X, Y, SP, status, $01
+//   16  VIC registers (64)
+//   80  CIA1 read registers (16), written registers (16)
+//   112 CIA2 read registers (16), written registers (16)
+//   144 raster line (2), raster IRQ line (2), frame count (4)
+//   256 RAM (65536)
+//   65792 colour RAM (1024)
+#define DUMP_HEADER_SIZE 256
+
+extern "C" bool c64host_writeDump(const char *path) {
+  uint8_t header[DUMP_HEADER_SIZE];
+  memset(header, 0, sizeof(header));
+  c64host_setPaused(true);
+  memcpy(header, "C64DUMP1", 8);
+  header[8] = (uint8_t)cpu.pc;
+  header[9] = (uint8_t)(cpu.pc >> 8);
+  header[10] = cpu.a;
+  header[11] = cpu.x;
+  header[12] = cpu.y;
+  header[13] = cpu.sp;
+  header[14] = cpu.cpustatus;
+  header[15] = cpu.RAM[1];
+  memcpy(&header[16], cpu.vic.R, 64);
+  memcpy(&header[80], cpu.cia1.R, 16);
+  memcpy(&header[96], cpu.cia1.W, 16);
+  memcpy(&header[112], cpu.cia2.R, 16);
+  memcpy(&header[128], cpu.cia2.W, 16);
+  uint16_t raster = (uint16_t)cpu.vic.rasterLine;
+  uint16_t rasterIrq = (uint16_t)cpu.vic.intRasterLine;
+  uint32_t frames = frameCount;
+  memcpy(&header[144], &raster, 2);
+  memcpy(&header[146], &rasterIrq, 2);
+  memcpy(&header[148], &frames, 4);
+  FIL file;
+  UINT written = 0;
+  bool ok = f_open(&file, path, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK;
+  if (ok) {
+    ok = f_write(&file, header, sizeof(header), &written) == FR_OK &&
+         written == sizeof(header);
+    ok = ok && f_write(&file, cpu.RAM, 65536, &written) == FR_OK &&
+         written == 65536;
+    ok = ok &&
+         f_write(&file, cpu.vic.COLORRAM, sizeof(cpu.vic.COLORRAM),
+                 &written) == FR_OK &&
+         written == sizeof(cpu.vic.COLORRAM);
+    ok = (f_close(&file) == FR_OK) && ok;
+  }
+  c64host_setPaused(false);
+  return ok;
 }
 
 extern "C" void c64host_requestReset(bool autostartAfter) {

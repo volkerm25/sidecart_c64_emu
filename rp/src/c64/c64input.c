@@ -24,6 +24,7 @@
  * stopped working.
  *   F10         leaves the viewer (handled on the ST)
  *   keypad (    diagnostic overlay on/off (c64video_setText)
+ *   keypad )    dump the C64's state to the SD card (c64host_writeDump)
  *
  * Every key press is also queued as an event (c64input_nextKey) for the
  * disk menu. While the menu is open (c64input_setMenuMode) the C64 sees no
@@ -53,6 +54,8 @@ static C64InputKey keyQueue[KEY_QUEUE_SIZE];
 static unsigned keyQueueHead;
 static unsigned keyQueueTail;
 volatile bool c64input_overlayOn;
+volatile bool c64input_dumpRequested;
+static bool dumpKeyWasDown = false;
 static bool helpWasDown = false;
 
 // A C64 key: column (CIA1 port A bit) * 8 + row (port B bit). WITH_SHIFT
@@ -126,7 +129,8 @@ static bool helpWasDown = false;
 #define C64_RUNSTOP K(7, 7)
 
 #define ST_F9 0x43
-#define ST_KEYPAD_OPEN 0x63  // keypad '(': diagnostic overlay on/off
+#define ST_KEYPAD_OPEN 0x63   // keypad '(': diagnostic overlay on/off
+#define ST_KEYPAD_CLOSE 0x64  // keypad ')': dump the C64 to the SD card
 #define ST_HELP 0x62
 
 // ST scancode -> C64 key.
@@ -259,6 +263,10 @@ static void applyState(const uint8_t *keys) {
     c64input_overlayOn = !c64input_overlayOn;
   }
   overlayKeyWasDown = overlayKeyDown;
+
+  bool dumpKeyDown = keyDown(keys, ST_KEYPAD_CLOSE);
+  if (dumpKeyDown && !dumpKeyWasDown) c64input_dumpRequested = true;
+  dumpKeyWasDown = dumpKeyDown;
 
   bool helpDown = keyDown(keys, ST_HELP);
   if (helpDown && !helpWasDown) c64input_restorePressed = true;
