@@ -302,6 +302,18 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 - Partitionen werden nicht betreten.
 - Bestätigt: Anzeige im Menü, Verzeichnis, LOAD.
 
+**TODO: CRT-Module (Steckmodule), vorgemerkt 2026-11-17:**
+- Stand in pico64:
+  - Vorhanden sind die PLA-Tabellen für 8K, 16K und Ultimax (GAME/EXROM).
+  - Es fehlen der Modulspeicher (`cpu.cartrigeLO/HI` sind 1-Byte-Platzhalter, „TODO“) und die Bankumschaltung über `$DE00`/`$DF00`. Beides ist per Patch-Skript nachrüstbar.
+- Stufe 1: CRT-Typ 0 (8K/16K normal, Ultimax) aus dem RAM. Knapp, aber machbar.
+- Stufe 2: bankumschaltende Spielmodule bis ~512 KB.
+  - Typen: Ocean (5), System 3 / C64 Games System (15), Magic Desk/Domark (19), Dinamic (17), Fun Play (7), Super Games (8).
+  - Beim Einstecken von SD in einen reservierten Flash-Bereich kopieren, core1 dabei anhalten (Reset ohnehin).
+  - Risiko: XIP-Cache-Konkurrenz mit dem Emulatorcode, Geschwindigkeit messen.
+- Nicht geplant: EasyFlash (beschreibbar), Freezer (Action Replay, Final Cartridge).
+- Bedienung: CRT-Dateien im F10-Menü neben den Disks. Einstecken mit Reset, Menüpunkt zum Abziehen.
+
 ## 6. Offene Punkte
 
 1. Mindestausstattung des ST (RAM, TOS-Version) – nach Phase 1.
