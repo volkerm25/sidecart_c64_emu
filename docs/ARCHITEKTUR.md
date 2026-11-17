@@ -1,6 +1,6 @@
 # C64-Emulator auf dem SidecarTridge Multi-device – Architektur, Risiken, Plan
 
-Stand: 2026-11-17 · Status: Entwurf v1.0 (M4 erreicht: Spiel aus D64 läuft stabil)
+Stand: 2026-11-17 · Status: Entwurf v1.1 (M5 erreicht: Ton über den YM2149)
 
 ## 1. Ziel und Rahmenbedingungen
 
@@ -100,6 +100,15 @@ Voraussetzung auf ST-Seite: Farbmonitor (Low-Res 320×200×16). Die Mindestausst
   - Filter und Ringmodulation werden ignoriert. Pulsbreite: optional später per Lautstärke-Trick.
 - Der ST schreibt die 14 Register im VBL, das sind ca. 400 Zyklen.
 - Ausbaustufe (optional, später): Updates öfter als 50 Hz über MFP Timer A, dann mit mehreren Registersätzen pro Frame.
+
+Umgesetzt (Phase 5, c6bddab):
+- Das Patch-Skript leitet in `pla.cpp` die SID-Zugriffe nach `rp/src/c64/c64sid.c` um, alles auf core1.
+- Hüllkurve: SID-Attack-Zeiten, Decay und Release dreimal so lang, alles linear. Ein Gate, das innerhalb eines Bildes an- und wieder ausgeht, startet trotzdem die Attack.
+- Tonhöhe: YM-Periode = 2 128 585 / F. Rauschperiode = Tonperiode / 16. Lautstärke = Pegel × `$D418` auf der logarithmischen YM-Skala (Tabelle).
+- Lesezugriffe: `$D41B` liefert Pseudo-Zufall (Spiele nutzen das als Zufallsquelle), `$D41C` die Hüllkurve von Stimme 3, Paddles `$FF`.
+- Die YM-Register 0–11 liegen im Cartridge-Fenster hinter den Video-Stempeln. Der ST schreibt 0–10 aus einer VBL-Queue-Routine, mit gesperrten Interrupts. Er behält die Port-Richtungsbits in Register 7 und lässt die Register 14/15 (Floppy, Drucker) unberührt. F10 entfernt die Routine und schaltet den Chip stumm.
+- M5 bestätigt am 2026-11-17: Testton per POKE, Musik in Hexenküche, Ruhe nach F10.
+- Noch offen: Klangqualität (Pulsbreite, Filter, exponentielles Decay/Release), Update-Rate über 50 Hz, Digi-Samples über `$D418`.
 
 ### 3.3 Eingabe
 
@@ -270,7 +279,7 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 
 ### Phase 5 – Ton
 - SID-Registerfile, SID→YM auf core1, YM-Ausgabe im ST-VBL. Feintuning des ADSR-Modells.
-- **M5:** Spiel mit erkennbarer Musik.
+- **M5:** Spiel mit erkennbarer Musik. ✅ 2026-11-17, siehe 3.2.
 
 ### Phase 6 – Laufwerk ausbauen und Feinschliff
 - **D2:** serielle KERNAL-Traps, Kommandokanal, SEQ-Dateien. **D3:** SAVE/Schreiben ins D64.
