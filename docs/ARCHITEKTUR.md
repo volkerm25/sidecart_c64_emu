@@ -1,6 +1,6 @@
 # C64-Emulator auf dem SidecarTridge Multi-device – Architektur, Risiken, Plan
 
-Stand: 2026-11-17 · Status: Entwurf v0.7 (M1 entschieden, M2 erreicht: C64-Bild auf dem ST)
+Stand: 2026-11-17 · Status: Entwurf v0.8 (M3 erreicht: Tastatur und Joystick)
 
 ## 1. Ziel und Rahmenbedingungen
 
@@ -103,9 +103,18 @@ Voraussetzung auf ST-Seite: Farbmonitor (Low-Res 320×200×16). Die Mindestausst
 
 ### 3.3 Eingabe
 
-- Der ST übernimmt den ACIA-IRQ und schaltet den IKBD auf Joystick-Event-Reporting (`$14`). Joystick 1 kommt vom Joystickport, Joystick 0 optional vom Mausport.
-- Tastatur: ein Bitfeld der gedrückten ST-Scancodes (16 B) geht mit jedem `FRAME_REQ` an den RP. Dort wird es per Tabelle auf die C64-Matrix 8×8 abgebildet. Die Matrix ersetzt `kbdData`/`keymatrixmap` in `c64.cpp`, damit Mehrfachtasten funktionieren.
-- Sondertasten am ST: F10 = Menü, Help = Joystick tauschen, Undo = Reset. Diese Belegung ist vorläufig.
+Umgesetzt (Phase 3):
+- Der ST übernimmt den ACIA-IRQ ($118) mit einem Handler, der als Kopie im RAM-Block läuft und ein Bit pro Scancode führt. Der IKBD bleibt im TOS-Mausmodus: Mauspakete werden übersprungen, der Joystickport kommt als Joystick 1 (`$FF`).
+  - Verworfen: Joystick-Event-Mode (`$12`, `$14`). Dort kam der Joystickport wie der Mausport an.
+  - Verworfen: den Mausport als C64-Port 1 nutzen. Eine ruhende Maus meldet beliebige Richtungen als gehalten. Port 1 teilt sich die Leitungen mit den Tastaturzeilen, und die Tastatur fiel aus.
+- Bei jeder Änderung schickt der ST den ganzen Zustand, 16 B, als ein Kommando (`C64INPUT_CMD` $6401, `send_sync` d3–d6). Ein wiederholtes Kommando schadet nicht.
+- Der RP bildet den Zustand per Tabelle auf die C64-Matrix 8×8 ab (`rp/src/c64/c64input.c`). `rp/src/c64/c64machine.cpp` ersetzt MCUMEs `c64.cpp`, dessen Tastatur nur eine Taste plus Modifier kannte. CIA1 liest jetzt die volle Matrix in beiden Scanrichtungen.
+- Belegung:
+  - Buchstaben nach deutscher Beschriftung, sonst nach Position.
+  - Esc/Undo = RUN/STOP, Help = RESTORE (NMI), Tab/Ctrl = CTRL, Alternate = C=.
+  - Cursor hoch/links sowie F2/F4/F6/F8 mit SHIFT.
+  - F9 legt den Joystick von C64-Port 2 auf Port 1 und zurück. F10 beendet die Anzeige.
+- M3 bestätigt am 2026-11-17: Tastatur, `PEEK(56320)` = 126/125/123/119/111. Noch nicht geprüft: RESTORE, F9, Mehrfachtasten im Spiel.
 
 ### 3.4 D64: virtuelles Laufwerk 8
 
@@ -230,7 +239,7 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 
 ### Phase 3 – Eingabe
 - IKBD-Handler, `FRAME_REQ` mit Eingabedaten, Scancode-Matrix, Joystick, Joystick tauschen.
-- **M3:** BASIC-Programm tippen und ausführen, Joystick in einem Spiel testen.
+- **M3:** BASIC-Programm tippen und ausführen, Joystick in einem Spiel testen. ✅ 2026-11-17: Tastatur und Joystick (über `PEEK`) bestätigt, siehe 3.3. Spieltest folgt mit Phase 4.
 
 ### Phase 4 – Dateien und D64
 - ROMs von SD inkl. Trap-Patches, Menü zur Dateiauswahl.
