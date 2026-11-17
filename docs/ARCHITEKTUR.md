@@ -1,6 +1,6 @@
 # C64-Emulator auf dem SidecarTridge Multi-device – Architektur, Risiken, Plan
 
-Stand: 2026-11-17 · Status: Entwurf v0.3 (Phase 0: RAM-Baseline des Templates gemessen)
+Stand: 2026-11-17 · Status: Entwurf v0.4 (Phase 1: ST-Durchsatz gemessen)
 
 ## 1. Ziel und Rahmenbedingungen
 
@@ -78,7 +78,17 @@ Voraussetzung auf ST-Seite: Farbmonitor (Low-Res 320×200×16). Die Mindestausst
   2. Der RP schreibt Dirty-Bitmap, Zeilendaten, Palette und YM-Register in `APP_FREE` und setzt das Token.
   3. Der ST kopiert. Bis zum nächsten Request bleibt der Frontbuffer unangetastet.
 - **ROM4-Fenster** (`APP_FREE` ≈ 48 KB ab `$FA2300`): Frontbuffer 32 000 B + Dirty-Bitmap 25 B + Palette 32 B + YM 16 B + Status. Das passt.
-- **Bandbreite (geschätzt, R1):** `movem.l` braucht ca. 4,5 Zyklen/Byte, ein Vollbild also etwa 143 000 von 160 000 Zyklen pro 50-Hz-Frame. Das heißt: Vollbild mit **25 fps**, bei wenigen Änderungen bis 50 fps. Einen Blitter gibt es auf dem ST nicht.
+- **Bandbreite (gemessen 2026-11-17, R1):** ST mit 8 MHz, 32 000 B, 50 Wiederholungen, Interrupts an:
+
+  | Routine | ms/Bild | Zyklen/Byte | Anteil 50-Hz-Frame |
+  |---|---|---|---|
+  | `move.l (a0)+,(a1)+`, Cartridge → Bild | 20,6 | 5,15 | 103 % |
+  | `movem.l` 40 B, Cartridge → Bild | 19,1 | 4,78 | 95,5 % |
+  | `movem.l` 40 B, RAM → Bild (Referenz) | 19,1 | 4,78 | 95,5 % |
+
+  Die Cartridge liest ohne Waitstates, so schnell wie RAM. Die Kopie war fehlerfrei, das Testbild sauber.
+  **Folgen:** Ein Vollbild pro 50-Hz-Frame ist ausgeschlossen. Eine Zeile (160 B) kostet ~96 µs. Bei ~2 ms Restbudget pro Frame (VBL, Eingabe, YM, Handshake) schafft der ST bei 50 fps **bis ~180 geänderte Zeilen**, darüber 25 fps. Vollbild bei 25 fps belegt ~48 %.
+- **Double Buffering auf dem ST:** Die Kopie dauert fast einen ganzen Frame. Deshalb gibt es zwei Bildschirme im ST-RAM (+32 KB), und im VBL wird über `$FF8201/03` auf den fertigen Bildschirm umgeschaltet. Das verhindert Tearing.
 
 ### 3.2 Audio: SID→YM
 
@@ -167,7 +177,7 @@ sidecart_c64_emu/
 
 | # | Risiko | W'keit | Auswirkung | Gegenmaßnahme / Prüfung |
 |---|---|---|---|---|
-| **R1** | Bandbreite ST ← Cartridge zu gering | hoch | hoch | Phase 1: Durchsatz messen. Dirty-Lines, 25-fps-Modus |
+| **R1** | Bandbreite ST ← Cartridge zu gering | ~~hoch~~ **gemessen** | mittel | 4,78 Zyklen/Byte, keine Waitstates (3.1). Dirty-Lines (bis ~180 Zeilen bei 50 fps), sonst 25 fps. ST-Double-Buffering |
 | **R2** | **Takt:** Das Template läuft mit 225 MHz, MCUME mit 250 MHz. Die PIO läuft mit Teiler 1, ihr Timing hängt also am Sys-Clock | hoch | hoch | Phase 1: (a) ROM-Emulation bei 250 MHz Langzeittest, ggf. PIO-Delays anpassen; (b) Emulator-Speed bei 225 MHz messen. Fallback: 225 MHz + Frameskip |
 | **R3** | CPU-Budget core0 reicht nicht für 50 Hz C64-Echtzeit | mittel–hoch | hoch | Messen. Heißen Code ins RAM (`__not_in_flash_func`). reSID entfällt bereits. Notfalls C64 langsamer als Echtzeit oder Rendering nur jeden 2. Frame |
 | **R4** | RAM: Bedarf ~198 KB bei 192 KB verfügbar (gemessen + geschätzt, 3.5) | hoch | hoch | Hebel aus 3.5: Netzwerk raus, Heap kleiner, ROMs im Flash, Backbuffer einsparen. Budget per `.map` prüfen |
@@ -193,7 +203,7 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 - **M0:** Eigener Build läuft auf MD + ST. ✅ 2026-11-17: Deploy per Booster-API (`make deploy`), die Demo-`userfw` startet auf dem ST.
 
 ### Phase 1 – Machbarkeit (Go/No-Go)
-1. **R1:** ST kopiert 32 000 B aus `$FA2300` ins Video-RAM, Zeit messen (Timer B / Rasterbalken). Mit Testbild vom RP.
+1. **R1:** ST kopiert 32 000 B aus `$FA2300` ins Video-RAM, Zeit messen. Mit Testbild vom RP. ✅ 2026-11-17: 19,1 ms/Bild (`movem.l`), siehe 3.1.
 2. **R2:** ROM-Emulation bei 250 MHz (und ggf. 1,15 V) im Langzeittest mit Prüfsummen.
 3. **R3–R5:** pico64-Kern mit Stubs in der MD-App, Frames/s bei 225 und 250 MHz, mit und ohne ROMs/Hot-Code im RAM. `.map`-Analyse für das RAM.
 4. **R12:** Host-Build: Kern am PC, BASIC-Startbild als PPM.
