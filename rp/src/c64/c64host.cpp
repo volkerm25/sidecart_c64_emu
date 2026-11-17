@@ -31,11 +31,14 @@ extern void c64roms_copyToRam(void);
 static volatile bool hostRunning = false;
 static volatile uint32_t frameCount = 0;
 static volatile uint32_t lastWindowUs = 0;
-static volatile uint32_t bestWindowUs = 0;
-static volatile uint32_t worstWindowUs = 0;
+static volatile uint32_t busyWindowUs = 0;
+static volatile uint32_t worstFrameUs = 0;
 static volatile uint32_t videoWindowUs = 0;
 static uint32_t windowStartUs = 0;
-static uint32_t videoUs = 0;  // conversion time in the current window
+static uint32_t videoUs = 0;  // hand-over time in the current window
+static uint32_t busyUs = 0;   // emulating time in the current window
+static uint32_t frameStartUs = 0;
+static uint32_t nextFrameUs = 0;  // when the next frame may start
 
 // ---------------------------------------------------------------------------
 // MCUME platform API
@@ -79,25 +82,37 @@ extern "C" void emu_DrawLine16(unsigned short *VBuf, int width, int height,
   }
 }
 
-// Called by the VIC at the end of every frame. MCUME waits here for its
-// 50 Hz timer; the speed test does not wait and only measures.
+// Called by the VIC at the end of every frame: measure, then wait until the
+// frame's 19,950 us are up. A core that falls more than a frame behind
+// starts afresh instead of racing to catch up.
 extern "C" void emu_DrawVsync(void) {
   c64video_frameEnd(cpu.vic.R[0x20]);
+  uint32_t now = time_us_32();
+  uint32_t busy = now - frameStartUs;
+  busyUs += busy;
   uint32_t frames = frameCount + 1;
   frameCount = frames;
+  // The first window includes the boot of the core; skip it.
+  if (frames > C64HOST_WINDOW_FRAMES && busy > worstFrameUs) {
+    worstFrameUs = busy;
+  }
   if ((frames % C64HOST_WINDOW_FRAMES) == 0) {
-    uint32_t now = time_us_32();
-    uint32_t window = now - windowStartUs;
+    lastWindowUs = now - windowStartUs;
     windowStartUs = now;
-    lastWindowUs = window;
+    busyWindowUs = busyUs;
+    busyUs = 0;
     videoWindowUs = videoUs;
     videoUs = 0;
-    // The first window includes the boot of the core; skip it.
-    if (frames > C64HOST_WINDOW_FRAMES) {
-      if (bestWindowUs == 0 || window < bestWindowUs) bestWindowUs = window;
-      if (window > worstWindowUs) worstWindowUs = window;
-    }
   }
+
+  nextFrameUs += C64HOST_FRAME_US;
+  if ((int32_t)(nextFrameUs - now) < -(int32_t)C64HOST_FRAME_US) {
+    nextFrameUs = now;
+  }
+  while ((int32_t)(nextFrameUs - time_us_32()) > 0) {
+    tight_loop_contents();
+  }
+  frameStartUs = time_us_32();
 }
 
 // No input yet.
@@ -130,6 +145,8 @@ static void core1Main(void) {
     cpu.vic.colors[i] = cpu.vic.R[0x20 + i] & 0x0f;
   }
   windowStartUs = time_us_32();
+  frameStartUs = windowStartUs;
+  nextFrameUs = windowStartUs;
   hostRunning = true;
   while (true) {
     c64_Step();  // one raster line
@@ -154,8 +171,8 @@ extern "C" void c64host_getStats(C64HostStats *stats) {
   stats->running = hostRunning;
   stats->frames = frameCount;
   stats->lastWindowUs = lastWindowUs;
-  stats->bestWindowUs = bestWindowUs;
-  stats->worstWindowUs = worstWindowUs;
+  stats->busyWindowUs = busyWindowUs;
+  stats->worstFrameUs = worstFrameUs;
   stats->videoWindowUs = videoWindowUs;
 #if defined(C64_ROMS_IN_RAM) && (C64_ROMS_IN_RAM != 0)
   stats->romsInRam = true;

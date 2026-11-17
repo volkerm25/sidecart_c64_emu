@@ -16,15 +16,18 @@ extern "C" {
 #endif
 
 // Speed figures, measured on core 1 over windows of C64HOST_WINDOW_FRAMES
-// emulated frames. The core runs unthrottled, so this is its raw speed.
+// emulated frames. The core is paced to the PAL C64's frame rate; "busy" is
+// the time it spends emulating, the rest it waits for the next frame.
 #define C64HOST_WINDOW_FRAMES 100
+// A PAL C64 frame: 312 lines of 63 cycles at 985,248 Hz = 19,950 us.
+#define C64HOST_FRAME_US 19950
 
 typedef struct {
   bool running;            // core 1 has been started
   uint32_t frames;         // frames emulated since the start
   uint32_t lastWindowUs;   // duration of the last complete window
-  uint32_t bestWindowUs;   // fastest window so far
-  uint32_t worstWindowUs;  // slowest window so far
+  uint32_t busyWindowUs;   // time spent emulating in the last window
+  uint32_t worstFrameUs;   // longest a single frame took to emulate so far
   uint32_t videoWindowUs;  // core 1's time handing lines to the converter
                            // on core 0 in the last window
   bool romsInRam;          // BASIC+KERNAL copied to RAM (C64_ROMS_IN_RAM)

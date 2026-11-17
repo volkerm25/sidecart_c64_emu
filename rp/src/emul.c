@@ -252,24 +252,19 @@ void cmdC64(const char *arg) {
                        ? (uint32_t)(C64HOST_WINDOW_FRAMES * 10000000ULL /
                                     st.lastWindowUs)
                        : 0;
-  uint32_t best10 = st.bestWindowUs
-                        ? (uint32_t)(C64HOST_WINDOW_FRAMES * 10000000ULL /
-                                     st.bestWindowUs)
-                        : 0;
-  uint32_t worst10 = st.worstWindowUs
-                         ? (uint32_t)(C64HOST_WINDOW_FRAMES * 10000000ULL /
-                                      st.worstWindowUs)
-                         : 0;
   snprintf(line, sizeof(line), "ROMs %s, %lu frames\n",
            st.romsInRam ? "RAM" : "flash", (unsigned long)st.frames);
   term_printString(line);
-  snprintf(line, sizeof(line), "fps %lu.%lu (%lu.%lu..%lu.%lu) %lu us/f\n",
+  // Core 1's load: emulating time per frame against the 19,950 us a frame
+  // may take, on average over the window and for the longest frame so far.
+  uint32_t busyPerFrame = st.busyWindowUs / C64HOST_WINDOW_FRAMES;
+  snprintf(line, sizeof(line), "fps %lu.%lu  load %lu%%  worst %lu%%\n",
            (unsigned long)(fps10 / 10), (unsigned long)(fps10 % 10),
-           (unsigned long)(worst10 / 10), (unsigned long)(worst10 % 10),
-           (unsigned long)(best10 / 10), (unsigned long)(best10 % 10),
-           (unsigned long)(st.lastWindowUs / C64HOST_WINDOW_FRAMES));
+           (unsigned long)(busyPerFrame * 100 / C64HOST_FRAME_US),
+           (unsigned long)(st.worstFrameUs * 100 / C64HOST_FRAME_US));
   term_printString(line);
-  snprintf(line, sizeof(line), "ST video %lu us/f\n",
+  snprintf(line, sizeof(line), "busy %lu us/f (worst %lu), video %lu\n",
+           (unsigned long)busyPerFrame, (unsigned long)st.worstFrameUs,
            (unsigned long)(st.videoWindowUs / C64HOST_WINDOW_FRAMES));
   term_printString(line);
   // The upper part of the C64 screen, where READY. appears after the boot.
