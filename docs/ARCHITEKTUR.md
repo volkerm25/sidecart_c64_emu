@@ -190,7 +190,7 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 - Git-Repo, `md-microfirmware-template` als Basis, MCUME als Submodule unter `third_party/`.
 - Toolchains: Pico SDK (Version des Templates), arm-none-eabi, atarist-toolkit-docker, picoprobe.
 - Template unverändert bauen und starten.
-- **M0:** Eigener Build läuft auf MD + ST.
+- **M0:** Eigener Build läuft auf MD + ST. ✅ 2026-11-17: Deploy per Booster-API (`make deploy`), die Demo-`userfw` startet auf dem ST.
 
 ### Phase 1 – Machbarkeit (Go/No-Go)
 1. **R1:** ST kopiert 32 000 B aus `$FA2300` ins Video-RAM, Zeit messen (Timer B / Rasterbalken). Mit Testbild vom RP.
