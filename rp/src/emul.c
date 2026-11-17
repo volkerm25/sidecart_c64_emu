@@ -9,9 +9,11 @@
 #include "emul.h"
 
 #include <stdint.h>
+#include <stdlib.h>
 
 // inclusw in the C file to avoid multiple definitions
 #include "aconfig.h"
+#include "c64drive.h"
 #include "c64host.h"
 #include "c64input.h"
 #include "chandler.h"
@@ -61,6 +63,7 @@ static void cmdPutInt(const char *arg);
 static void cmdPutBool(const char *arg);
 static void cmdPutString(const char *arg);
 static void cmdC64(const char *arg);
+static void cmdDisk(const char *arg);
 static void emul_factoryReset(void);
 
 // Command table
@@ -70,6 +73,7 @@ static const Command commands[] = {
     {"e", cmdExit},
     {"f", cmdFirmware},
     {"c", cmdC64},
+    {"d", cmdDisk},
     {"x", cmdBooster},
     {"?", cmdHelp},
     {"s", cmdSettings},
@@ -143,6 +147,7 @@ static void emul_serviceFor(uint32_t ms) {
 
 static void __not_in_flash_func(emul_pollTick)(void) {
   chandler_loop();
+  c64drive_poll();
   term_loop();
   select_poll();
 }
@@ -218,7 +223,7 @@ static void menu(void) {
   term_printString("\n");
   term_printString("[S]ettings     | [F]irmware launch\n");
   term_printString("[E]xit desktop | [X] Back to Booster\n");
-  term_printString("[C]64 speed test\n\n");
+  term_printString("[C]64 status   | [D]isk drive 8\n\n");
   atariLine(atariLineShown, sizeof(atariLineShown));
   term_printString(atariLineShown);
   term_printString("\n");
@@ -256,6 +261,9 @@ void cmdC64(const char *arg) {
   snprintf(line, sizeof(line), "ROMs %s, %lu frames\n",
            st.romsInRam ? "RAM" : "flash", (unsigned long)st.frames);
   term_printString(line);
+  const char *disk = c64drive_mountedName();
+  snprintf(line, sizeof(line), "Drive 8: %.30s\n", disk ? disk : "empty");
+  term_printString(line);
   // Core 1's load: emulating time per frame against the 19,950 us a frame
   // may take, on average over the window and for the longest frame so far.
   uint32_t busyPerFrame = st.busyWindowUs / C64HOST_WINDOW_FRAMES;
@@ -277,6 +285,43 @@ void cmdC64(const char *arg) {
     term_printString(line);
   }
   term_printString("[C] refresh  [M] menu\n");
+}
+
+// Drive 8: "d" lists the D64 images in C64DRIVE_FOLDER, "d <n>" mounts the
+// n-th of them.
+#define DISK_LIST_MAX 16
+
+void cmdDisk(const char *arg) {
+  menuScreenActive = false;
+  char name[64];
+  char line[TERM_SCREEN_SIZE_X + 8];
+  showTitle();
+  if (arg != NULL && arg[0] != '\0') {
+    int number = atoi(arg);
+    if (number >= 1 && c64drive_findImage(number - 1, name, sizeof(name)) &&
+        c64drive_mount(name)) {
+      snprintf(line, sizeof(line), "Drive 8: %.30s\n", name);
+    } else {
+      snprintf(line, sizeof(line), "Cannot mount image %d.\n", number);
+    }
+    term_printString(line);
+    term_printString("[D] list  [M] menu\n");
+    return;
+  }
+  const char *disk = c64drive_mountedName();
+  snprintf(line, sizeof(line), "Drive 8: %.30s\n\n", disk ? disk : "empty");
+  term_printString(line);
+  int count = 0;
+  while (count < DISK_LIST_MAX &&
+         c64drive_findImage(count, name, sizeof(name))) {
+    snprintf(line, sizeof(line), "%2d %.36s\n", count + 1, name);
+    term_printString(line);
+    count++;
+  }
+  if (count == 0) {
+    term_printString("No D64 images in " C64DRIVE_FOLDER ".\n");
+  }
+  term_printString("\nD <number> mounts  [M] menu\n");
 }
 
 void cmdHelp(const char *arg) {
@@ -695,6 +740,8 @@ void emul_start() {
     // Drain the ROM3 command ring and dispatch to the registered callbacks on
     // every pass: the ST spins on its answer, so the loop never waits.
     chandler_loop();
+    // A LOAD from drive 8 waits on core 1 until this serves it.
+    c64drive_poll();
     if (chandler_consumeStBoot()) {
       // A new ST session: nothing typed before the reset carries over, and
       // the ST gets a freshly drawn menu.

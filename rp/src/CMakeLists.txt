@@ -159,14 +159,13 @@ pico_add_extra_outputs(${PROJECT_NAME})
 # C64 emulator core: MCUME pico64 (third_party/MCUME, never edited in place)
 # plus the host layer in c64/. The core's own headers come first for its
 # sources, so its settings.h does not collide with settings/settings.h.
-# reSID, MCUME's display/ platform layer and its c64.cpp (replaced by
-# c64/c64machine.cpp) are not built.
+# reSID, MCUME's display/ platform layer and its c64.cpp and patches.cpp
+# (replaced by c64/c64machine.cpp) are not built.
 set(MCUME_PICO64_DIR ${CMAKE_CURRENT_LIST_DIR}/../../third_party/MCUME/MCUME_pico/pico64)
 set(C64_CORE_SOURCES
     ${MCUME_PICO64_DIR}/cia1.cpp
     ${MCUME_PICO64_DIR}/cia2.cpp
     ${MCUME_PICO64_DIR}/cpu.cpp
-    ${MCUME_PICO64_DIR}/patches.cpp
     ${MCUME_PICO64_DIR}/pla.cpp
     ${MCUME_PICO64_DIR}/timerutil.cpp
     ${MCUME_PICO64_DIR}/vic.cpp)
@@ -181,11 +180,12 @@ set_source_files_properties(${C64_CORE_SOURCES} ${C64_HOST_SOURCES} PROPERTIES
 set_source_files_properties(${C64_CORE_SOURCES}
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64roms.cpp PROPERTIES COMPILE_OPTIONS "-w")
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/c64)
-# The ST screen converter and the input mapping need only the template's
-# headers.
+# The ST screen converter, the input mapping and the drive need only the
+# template's headers.
 target_sources(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64video.c
-    ${CMAKE_CURRENT_LIST_DIR}/c64/c64input.c)
+    ${CMAKE_CURRENT_LIST_DIR}/c64/c64input.c
+    ${CMAKE_CURRENT_LIST_DIR}/c64/c64drive.c)
 # The emulator runs without Wi-Fi (see lwipopts.h and emul.c).
 add_compile_definitions(C64_NO_WIFI=1)
 # C64_ROMS_IN_RAM=1 in the environment of build.sh serves the C64 ROMs from

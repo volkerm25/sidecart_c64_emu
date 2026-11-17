@@ -17,6 +17,7 @@
 #include "pico/stdlib.h"
 
 extern "C" {
+#include "c64drive.h"
 #include "c64input.h"
 #include "c64video.h"
 #include "emuapi.h"
@@ -165,6 +166,7 @@ extern "C" void c64host_start(void) {
   c64roms_copyToRam();
 #endif
   c64video_init();
+  c64drive_init(cpu.RAM);
   multicore_launch_core1(core1Main);
   c64video_startConverter();
 }
