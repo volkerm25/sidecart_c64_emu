@@ -44,16 +44,21 @@
 extern "C" {
 #endif
 
-// Clear the screen area and mark every line as changed. Call before the
-// core starts.
+// Core 0: clear the screen area and mark every line as changed. Call before
+// core 1 starts.
 void c64video_init(void);
 
-// One line of the C64 display area (0..199), 320 pixels, each a C64 colour
-// index 0..15.
+// Core 0: convert the lines core 1 posts, from the inter-core FIFO's
+// interrupt. Call after core 1 has been launched (the launch uses the FIFO).
+void c64video_startConverter(void);
+
+// Core 1: one line of the C64 display area (0..199), 320 pixels, each a C64
+// colour index 0..15. Copies the line and returns; waits only while all
+// slots are still being converted.
 void c64video_line(int line, const uint16_t *pixels);
 
-// The frame is complete: publish its number and take the border colour for
-// the next one.
+// Core 1: the frame is complete. Core 0 publishes its number and takes the
+// border colour for the next one, after converting the frame's lines.
 void c64video_frameEnd(uint8_t borderColour);
 
 #ifdef __cplusplus

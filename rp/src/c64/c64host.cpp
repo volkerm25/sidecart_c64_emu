@@ -33,7 +33,9 @@ static volatile uint32_t frameCount = 0;
 static volatile uint32_t lastWindowUs = 0;
 static volatile uint32_t bestWindowUs = 0;
 static volatile uint32_t worstWindowUs = 0;
+static volatile uint32_t videoWindowUs = 0;
 static uint32_t windowStartUs = 0;
+static uint32_t videoUs = 0;  // conversion time in the current window
 
 // ---------------------------------------------------------------------------
 // MCUME platform API
@@ -71,7 +73,9 @@ extern "C" void emu_DrawLine16(unsigned short *VBuf, int width, int height,
   (void)height;
   int displayLine = line - C64HOST_TOP_BORDER_LINES;
   if (displayLine >= 0 && displayLine < C64VIDEO_LINES) {
+    uint32_t start = time_us_32();
     c64video_line(displayLine, VBuf);
+    videoUs += time_us_32() - start;
   }
 }
 
@@ -86,6 +90,8 @@ extern "C" void emu_DrawVsync(void) {
     uint32_t window = now - windowStartUs;
     windowStartUs = now;
     lastWindowUs = window;
+    videoWindowUs = videoUs;
+    videoUs = 0;
     // The first window includes the boot of the core; skip it.
     if (frames > C64HOST_WINDOW_FRAMES) {
       if (bestWindowUs == 0 || window < bestWindowUs) bestWindowUs = window;
@@ -136,6 +142,7 @@ extern "C" void c64host_start(void) {
 #endif
   c64video_init();
   multicore_launch_core1(core1Main);
+  c64video_startConverter();
 }
 
 extern "C" void c64host_stop(void) {
@@ -149,6 +156,7 @@ extern "C" void c64host_getStats(C64HostStats *stats) {
   stats->lastWindowUs = lastWindowUs;
   stats->bestWindowUs = bestWindowUs;
   stats->worstWindowUs = worstWindowUs;
+  stats->videoWindowUs = videoWindowUs;
 #if defined(C64_ROMS_IN_RAM) && (C64_ROMS_IN_RAM != 0)
   stats->romsInRam = true;
 #else

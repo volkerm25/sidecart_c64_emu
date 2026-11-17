@@ -269,6 +269,9 @@ void cmdC64(const char *arg) {
            (unsigned long)(best10 / 10), (unsigned long)(best10 % 10),
            (unsigned long)(st.lastWindowUs / C64HOST_WINDOW_FRAMES));
   term_printString(line);
+  snprintf(line, sizeof(line), "ST video %lu us/f\n",
+           (unsigned long)(st.videoWindowUs / C64HOST_WINDOW_FRAMES));
+  term_printString(line);
   // The upper part of the C64 screen, where READY. appears after the boot.
   for (int row = 0; row < 12; row++) {
     char text[41];

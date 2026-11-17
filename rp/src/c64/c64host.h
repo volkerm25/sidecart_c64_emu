@@ -25,6 +25,8 @@ typedef struct {
   uint32_t lastWindowUs;   // duration of the last complete window
   uint32_t bestWindowUs;   // fastest window so far
   uint32_t worstWindowUs;  // slowest window so far
+  uint32_t videoWindowUs;  // core 1's time handing lines to the converter
+                           // on core 0 in the last window
   bool romsInRam;          // BASIC+KERNAL copied to RAM (C64_ROMS_IN_RAM)
 } C64HostStats;
 

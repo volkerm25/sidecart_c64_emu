@@ -2,7 +2,13 @@
  * File: c64video.c
  * Description: Turns the C64 picture into an ST low-resolution screen in the
  * cartridge window (see c64video.h for the layout and the protocol).
- * Runs on core 1, called by the VIC once per line.
+ *
+ * Converting a line costs about 17 us (3.4 ms per frame), too much for
+ * core 1, which has only some 6 ms per frame to spare. So core 1 only copies
+ * each line into one of C64VIDEO_SLOTS slots and posts its number through the
+ * inter-core FIFO; the FIFO's interrupt on core 0 converts it, whatever
+ * core 0's main loop is doing. The end of a frame goes through the same FIFO,
+ * so it is handled after that frame's lines.
  * License: GPL v3
  */
 
@@ -13,6 +19,10 @@
 
 #include "chandler.h"
 #include "constants.h"
+#include "hardware/irq.h"
+#include "hardware/sync.h"
+#include "pico/multicore.h"
+#include "pico/platform.h"
 
 static_assert(C64VIDEO_END_OFFSET <= CHANDLER_FRAMEBUFFER_OFFSET,
               "C64 video buffers overlap the terminal framebuffer");
@@ -37,7 +47,17 @@ static const uint8_t c64Rgb[16][3] = {
 static uint32_t planeBits[16];
 
 // Number of the frame being rendered; the last finished one is this - 1.
+// Core 0 only, like planeBits.
 static uint16_t renderingFrame;
+
+// Line slots between the cores. Core 1 fills a free slot and posts
+// (line << 8) | slot; core 0 converts it and frees the slot.
+#define C64VIDEO_SLOTS 8
+#define C64VIDEO_LINE_PIXELS 320
+#define C64VIDEO_POST_FRAME_END 0x80000000u
+static uint16_t slotPixels[C64VIDEO_SLOTS][C64VIDEO_LINE_PIXELS];
+static volatile bool slotBusy[C64VIDEO_SLOTS];
+static unsigned nextSlot;  // core 1 only
 
 static void setBorder(uint8_t border) {
   volatile uint16_t *palette = WINDOW_WORDS(C64VIDEO_PALETTE_OFFSET);
@@ -72,7 +92,8 @@ void c64video_init(void) {
   setBorder(14);  // light blue, the C64's border at power-on
 }
 
-void c64video_line(int line, const uint16_t *pixels) {
+static void __not_in_flash_func(convertLine)(int line,
+                                             const uint16_t *pixels) {
   volatile uint16_t *dst =
       WINDOW_WORDS(C64VIDEO_SCREEN_OFFSET + line * C64VIDEO_LINE_BYTES);
   uint16_t changed = 0;
@@ -102,8 +123,48 @@ void c64video_line(int line, const uint16_t *pixels) {
   }
 }
 
-void c64video_frameEnd(uint8_t borderColour) {
+static void __not_in_flash_func(frameEnd)(uint8_t borderColour) {
   WINDOW_WORDS(C64VIDEO_FRAME_OFFSET)[0] = renderingFrame;
   renderingFrame++;
   setBorder(borderColour & 15u);
+}
+
+// Core 0: the FIFO from core 1 holds data.
+static void __not_in_flash_func(fifoIrq)(void) {
+  while (multicore_fifo_rvalid()) {
+    uint32_t post = sio_hw->fifo_rd;
+    if (post & C64VIDEO_POST_FRAME_END) {
+      frameEnd((uint8_t)post);
+    } else {
+      unsigned slot = post & 0xFFu;
+      convertLine((int)(post >> 8), slotPixels[slot]);
+      __dmb();
+      slotBusy[slot] = false;
+    }
+  }
+  multicore_fifo_clear_irq();
+}
+
+void c64video_startConverter(void) {
+  // No drain: the launch leaves the FIFO empty, and core 1 may already have
+  // posted its first line, which a drain would lose with its slot.
+  multicore_fifo_clear_irq();
+  irq_set_exclusive_handler(SIO_IRQ_PROC0, fifoIrq);
+  irq_set_enabled(SIO_IRQ_PROC0, true);
+}
+
+void __not_in_flash_func(c64video_line)(int line, const uint16_t *pixels) {
+  unsigned slot = nextSlot;
+  nextSlot = (slot + 1u) % C64VIDEO_SLOTS;
+  while (slotBusy[slot]) {
+    tight_loop_contents();
+  }
+  memcpy(slotPixels[slot], pixels, sizeof(slotPixels[slot]));
+  slotBusy[slot] = true;
+  __dmb();
+  multicore_fifo_push_blocking(((uint32_t)line << 8) | slot);
+}
+
+void __not_in_flash_func(c64video_frameEnd)(uint8_t borderColour) {
+  multicore_fifo_push_blocking(C64VIDEO_POST_FRAME_END | (borderColour & 15u));
 }
