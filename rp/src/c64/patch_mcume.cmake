@@ -19,6 +19,13 @@
 # that IRQ, and since the raster flag stayed set, every later one too: the
 # game hung waiting for it. Bit 7 is now (flags & mask) != 0, as on a VIC.
 #
+# cia2.cpp: the serial bus lines. Off the Teensy READ_CLK_DATA() is 0, so
+# CLK and DATA always read low, as if a device held them: the KERNAL took any
+# serial access to a device (OPEN, or LOAD from device 9) as answered, then
+# waited forever for the device to let DATA go. An empty bus now reads high
+# on both lines unless the C64 pulls them low itself (port A bits 4 and 5
+# set as outputs), so the KERNAL reports DEVICE NOT PRESENT.
+#
 # pla.cpp: SID accesses. Without reSID (HAS_SND unset) writes went nowhere
 # and reads returned 0; they now go to c64/c64sid.c, which turns the SID
 # into YM2149 registers.
@@ -74,6 +81,12 @@ mcume_replace(
 mcume_replace(
     "    case 0x1A : //IRQ Mask\n      cpu.vic.R[address] = value & 0x0f;\n      break;"
     "    case 0x1A : //IRQ Mask\n      cpu.vic.R[address] = value & 0x0f;\n      if (cpu.vic.R[0x19] & cpu.vic.R[0x1a] & 0x0f) cpu.vic.R[0x19] |= 0x80;\n      else cpu.vic.R[0x19] &= 0x7f;\n      break;")
+
+elseif(name STREQUAL "cia2.cpp")
+
+mcume_replace(
+    "        ret = (cpu.cia2.R[address] & 0x3f) | READ_CLK_DATA();"
+    "        {\n          // Empty bus: CLK (bit 6) and DATA (bit 7) read high unless\n          // the C64 drives them low (output bits 4, 5).\n          uint8_t driven = cpu.cia2.R[0x00] & cpu.cia2.R[0x02];\n          ret = (cpu.cia2.R[address] & 0x3f) | ((driven & 0x10) ? 0 : 0x40) |\n                ((driven & 0x20) ? 0 : 0x80);\n        }")
 
 elseif(name STREQUAL "pla.cpp")
 

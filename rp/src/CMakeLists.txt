@@ -162,10 +162,10 @@ pico_add_extra_outputs(${PROJECT_NAME})
 # reSID, MCUME's display/ platform layer and its c64.cpp and patches.cpp
 # (replaced by c64/c64machine.cpp) are not built.
 set(MCUME_PICO64_DIR ${CMAKE_CURRENT_LIST_DIR}/../../third_party/MCUME/MCUME_pico/pico64)
-# cpu.cpp, vic.cpp and pla.cpp are compiled from copies with fixes applied
-# (c64/patch_mcume.cmake explains them).
+# cpu.cpp, vic.cpp, pla.cpp and cia2.cpp are compiled from copies with fixes
+# applied (c64/patch_mcume.cmake explains them).
 set(MCUME_PATCHED_DIR ${CMAKE_CURRENT_BINARY_DIR}/mcume)
-foreach(patched cpu.cpp vic.cpp pla.cpp)
+foreach(patched cpu.cpp vic.cpp pla.cpp cia2.cpp)
     add_custom_command(
         OUTPUT ${MCUME_PATCHED_DIR}/${patched}
         COMMAND ${CMAKE_COMMAND}
@@ -178,7 +178,7 @@ foreach(patched cpu.cpp vic.cpp pla.cpp)
 endforeach()
 set(C64_CORE_SOURCES
     ${MCUME_PICO64_DIR}/cia1.cpp
-    ${MCUME_PICO64_DIR}/cia2.cpp
+    ${MCUME_PATCHED_DIR}/cia2.cpp
     ${MCUME_PATCHED_DIR}/cpu.cpp
     ${MCUME_PATCHED_DIR}/pla.cpp
     ${MCUME_PICO64_DIR}/timerutil.cpp
