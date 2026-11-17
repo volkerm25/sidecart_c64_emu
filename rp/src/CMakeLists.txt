@@ -162,25 +162,27 @@ pico_add_extra_outputs(${PROJECT_NAME})
 # reSID, MCUME's display/ platform layer and its c64.cpp and patches.cpp
 # (replaced by c64/c64machine.cpp) are not built.
 set(MCUME_PICO64_DIR ${CMAKE_CURRENT_LIST_DIR}/../../third_party/MCUME/MCUME_pico/pico64)
-# cpu.cpp is compiled from a copy with the undocumented store opcodes
-# completed (c64/patch_mcume_cpu.cmake explains why).
-set(MCUME_CPU_PATCHED ${CMAKE_CURRENT_BINARY_DIR}/mcume/cpu.cpp)
-add_custom_command(
-    OUTPUT ${MCUME_CPU_PATCHED}
-    COMMAND ${CMAKE_COMMAND}
-        -DMCUME_CPU_SOURCE=${MCUME_PICO64_DIR}/cpu.cpp
-        -DMCUME_CPU_PATCHED=${MCUME_CPU_PATCHED}
-        -P ${CMAKE_CURRENT_LIST_DIR}/c64/patch_mcume_cpu.cmake
-    DEPENDS ${MCUME_PICO64_DIR}/cpu.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/c64/patch_mcume_cpu.cmake
-    COMMENT "Patching MCUME pico64 cpu.cpp")
+# cpu.cpp and vic.cpp are compiled from copies with fixes applied
+# (c64/patch_mcume.cmake explains them).
+set(MCUME_PATCHED_DIR ${CMAKE_CURRENT_BINARY_DIR}/mcume)
+foreach(patched cpu.cpp vic.cpp)
+    add_custom_command(
+        OUTPUT ${MCUME_PATCHED_DIR}/${patched}
+        COMMAND ${CMAKE_COMMAND}
+            -DMCUME_SOURCE=${MCUME_PICO64_DIR}/${patched}
+            -DMCUME_PATCHED=${MCUME_PATCHED_DIR}/${patched}
+            -P ${CMAKE_CURRENT_LIST_DIR}/c64/patch_mcume.cmake
+        DEPENDS ${MCUME_PICO64_DIR}/${patched}
+            ${CMAKE_CURRENT_LIST_DIR}/c64/patch_mcume.cmake
+        COMMENT "Patching MCUME pico64 ${patched}")
+endforeach()
 set(C64_CORE_SOURCES
     ${MCUME_PICO64_DIR}/cia1.cpp
     ${MCUME_PICO64_DIR}/cia2.cpp
-    ${MCUME_CPU_PATCHED}
+    ${MCUME_PATCHED_DIR}/cpu.cpp
     ${MCUME_PICO64_DIR}/pla.cpp
     ${MCUME_PICO64_DIR}/timerutil.cpp
-    ${MCUME_PICO64_DIR}/vic.cpp)
+    ${MCUME_PATCHED_DIR}/vic.cpp)
 set(C64_HOST_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64host.cpp
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64machine.cpp
