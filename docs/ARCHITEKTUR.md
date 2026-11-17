@@ -1,6 +1,6 @@
 # C64-Emulator auf dem SidecarTridge Multi-device – Architektur, Risiken, Plan
 
-Stand: 2026-11-17 · Status: Entwurf v1.2 (Phase 6 läuft: Disk-Menü am ST fertig)
+Stand: 2026-11-17 · Status: Entwurf v1.3 (Phase 6 läuft: Disk-Menü und D81 fertig)
 
 ## 1. Ziel und Rahmenbedingungen
 
@@ -295,6 +295,12 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
   - Leertaste legt ein und startet per Reset und Autostart: `L`+`⇧O"*",8,1` in den Tastaturpuffer, sobald der KERNAL auf eine Taste wartet (PC `$E5CD`–`$E5D6`), `RUN` nach erfolgreichem LOAD.
   - R setzt zurück, Q führt zum Desktop, F10/Esc schließt.
 - Q läuft über einen Zähler im Cartridge-Fenster: Der ST verlässt die Anzeige, wenn er sich ändert. F10 beendet die Anzeige nicht mehr.
+
+**D81 ✅ (7d14d1b, bestätigt 2026-11-17):**
+- Das Laufwerk nimmt auch D81 (1581: 80 Spuren × 40 Sektoren, 819 200 B bzw. 822 400 B mit Fehlerbytes).
+- Eine Formattabelle in `c64drive.c` hält die Unterschiede fest: Verzeichnisspur 40, erster Verzeichnissektor 40/3, Diskname bei `$04`, ID und DOS-Typ bei `$16`, Freiblöcke in 40/1 und 40/2 (6-Byte-Einträge).
+- Partitionen werden nicht betreten.
+- Bestätigt: Anzeige im Menü, Verzeichnis, LOAD.
 
 ## 6. Offene Punkte
 
