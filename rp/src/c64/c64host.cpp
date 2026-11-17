@@ -188,6 +188,15 @@ extern "C" void c64host_getStats(C64HostStats *stats) {
 #else
   stats->romsInRam = false;
 #endif
+  uint16_t pc = cpu.pc;
+  stats->pc = pc;
+  stats->a = cpu.a;
+  stats->x = cpu.x;
+  stats->y = cpu.y;
+  stats->sp = cpu.sp;
+  for (int i = 0; i < 3; i++) {
+    stats->code[i] = cpu.RAM[(uint16_t)(pc + i)];
+  }
 }
 
 // C64 screen codes to ASCII: 0 '@', 1..26 letters, 27..63 as in ASCII,

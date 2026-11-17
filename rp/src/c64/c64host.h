@@ -31,6 +31,11 @@ typedef struct {
   uint32_t videoWindowUs;  // core 1's time handing lines to the converter
                            // on core 0 in the last window
   bool romsInRam;          // BASIC+KERNAL copied to RAM (C64_ROMS_IN_RAM)
+  // The 6510 as core 0 sees it now (read while core 1 runs, for diagnosis):
+  // registers and the three bytes of RAM at the program counter.
+  uint16_t pc;
+  uint8_t a, x, y, sp;
+  uint8_t code[3];
 } C64HostStats;
 
 // Reset the C64 and start emulating it on core 1. Call once.

@@ -264,6 +264,11 @@ void cmdC64(const char *arg) {
   const char *disk = c64drive_mountedName();
   snprintf(line, sizeof(line), "Drive 8: %.30s\n", disk ? disk : "empty");
   term_printString(line);
+  // Where the 6510 is (RAM at PC; under ROM the CPU sees the ROM instead).
+  snprintf(line, sizeof(line),
+           "PC %04X A%02X X%02X Y%02X S%02X  %02X %02X %02X\n", st.pc, st.a,
+           st.x, st.y, st.sp, st.code[0], st.code[1], st.code[2]);
+  term_printString(line);
   // Core 1's load: emulating time per frame against the 19,950 us a frame
   // may take, on average over the window and for the longest frame so far.
   uint32_t busyPerFrame = st.busyWindowUs / C64HOST_WINDOW_FRAMES;
