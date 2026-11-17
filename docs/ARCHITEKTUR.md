@@ -1,6 +1,6 @@
 # C64-Emulator auf dem SidecarTridge Multi-device – Architektur, Risiken, Plan
 
-Stand: 2026-11-17 · Status: Entwurf v0.8 (M3 erreicht: Tastatur und Joystick)
+Stand: 2026-11-17 · Status: Entwurf v0.9 (Phase 4 läuft: D64-LOAD funktioniert, M4 offen)
 
 ## 1. Ziel und Rahmenbedingungen
 
@@ -246,6 +246,24 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 - **D1:** LOAD von PRG und D64 (Directory, Wildcards, `"$"`), Auto-Start, Disk-Wechsel.
 - Host-Tests für den D64-Parser mit einer Sammlung echter Images.
 - **M4:** Spiel aus einem D64 per Menü starten und spielen (ohne Ton).
+
+**Stand 2026-11-17 (Phase 4 unterbrochen):**
+- Umgesetzt (D1 ohne Auto-Start und Disk-Wechsel am ST):
+  - `rp/src/c64/c64drive.c` und der LOAD-Trap in `rp/src/c64/c64machine.cpp`, das MCUMEs `patches.cpp` ersetzt.
+  - Trap am LOAD-Vektor `$FFD5`. Bei Gerät 8 mit gemountetem D64 übergibt core1 den Auftrag an core0 und wartet. core0 liest in der Hauptschleife von SD und schreibt direkt ins C64-RAM. So greift nur core0 auf FatFs zu.
+  - Abschluss über `$F5D2` („LOADING“) und `$F5A9` (CLC, X/Y = Ende), Fehler über `$F6FB + 3·(n−1)`.
+  - `LOAD"$"` liefert ein Verzeichnis wie die 1541. Namen mit `*` und `?`, `0:` und `,…` werden entfernt. Geladen werden PRG, SEQ und USR.
+  - SAVE und andere Geräte laufen weiter in den seriellen KERNAL-Code: DEVICE NOT PRESENT.
+  - RP-Menü: `D` listet die D64 in `/c64`, `D <n>` mountet. Die Seite `C` zeigt das gemountete Image.
+- Bestätigt: Hexenküche (`/c64/Hexenkueche_(HTW).d64`) lädt, startet und zeigt das Titelbild mit Animation.
+- **Offen 1: Feuerknopf des Joysticks.**
+  - Im TOS-Mausmodus kommt das Feuer des Joystickports weder im Joystick-Paket (`$FF`, Bit 7) noch als Maustaste im Kopf der Mauspakete an. Nur die echte Maustaste löst Feuer aus, Stand afe7d85.
+  - Nächster Schritt: den IKBD wieder auf Joystick-Event-Mode schalten (`$14`, ggf. ohne `$12`) und die Port-Zuordnung dort nachmessen. Dort kam der Joystickport als Joystick 0 (`$FE`) an. Alternativ Joystick-Abfrage per Interrogation (`$15`/`$16`).
+  - Rohdaten am besten im RP-Menü anzeigen lassen: Byte 14/15 und Bit 0 der Tastenmaske.
+- **Offen 2: Hexenküche stürzt nach einiger Zeit ab.**
+  - Noch nicht untersucht. Zu klären: Hängt nur der C64 (Bild steht, ST reagiert noch auf F10) oder der RP (Menü nach SELECT, Seite `C`: läuft der Frame-Zähler weiter)?
+  - Kandidaten: Lädt das Spiel nach (zweiter LOAD, eigener Lader, R7)? Genauigkeit von pico64? Die Abwesenheit von SID (Spiel wartet auf SID-Register oder Paddles)?
+  - Debug-Ausgabe über UART fehlt bisher (kein Probe angeschlossen).
 
 ### Phase 5 – Ton
 - SID-Registerfile, SID→YM auf core1, YM-Ausgabe im ST-VBL. Feintuning des ADSR-Modells.
