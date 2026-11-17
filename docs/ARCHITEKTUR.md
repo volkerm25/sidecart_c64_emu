@@ -1,6 +1,6 @@
 # C64-Emulator auf dem SidecarTridge Multi-device – Architektur, Risiken, Plan
 
-Stand: 2026-11-17 · Status: Entwurf v0.5 (Phase 1: ST-Durchsatz gemessen, 250 MHz vorläufig bestanden)
+Stand: 2026-11-17 · Status: Entwurf v0.6 (Phase 1: ST-Durchsatz, 250 MHz und Emulator-Geschwindigkeit gemessen)
 
 ## 1. Ziel und Rahmenbedingungen
 
@@ -150,7 +150,14 @@ Voraussetzung auf ST-Seite: Farbmonitor (Low-Res 320×200×16). Die Mindestausst
 4. Ohne Backbuffer: Dirty-Zeilen direkt in den Frontbuffer in `ROM_IN_RAM` schreiben, sobald der ST fertig kopiert hat (−32 KB). Dann ist ein Zeilen-Ringpuffer für die Wartezeit nötig.
 5. Ungenutzte Template-Module (Download, Display-OLED, devhooks im Release) prüfen.
 
-Das genaue Budget wird in Phase 1 mit dem eingebauten Kern per `.map`-Datei bestimmt.
+**Gemessen (Phase 1, Kern eingebaut, Debug-Build):** Ohne WLAN (`C64_NO_WIFI`: kein WLAN-Init, lwIP-Pools minimal, cyw43-Treiber und -Firmware fallen beim Linken weg) und mit Heap 24 KB statt 32 KB (der Template-Autor hat 13,1 KB Spitze gemessen):
+
+| Variante | belegt | frei (von 196 608 B) |
+|---|---|---|
+| ROMs im Flash | 171 212 B | 25 396 B |
+| BASIC + KERNAL im RAM (`C64_ROMS_IN_RAM=1`) | 187 596 B | 9 012 B |
+
+Die ROMs im RAM bringen keine Geschwindigkeit (siehe R5), sie bleiben im Flash. Ein voller 32-KB-Backbuffer passt auch dann nicht in die verbleibenden ~25 KB. Für Phase 2 heißt das: Hebel 4 (direkt in den Frontbuffer bzw. Zeilen-Ringpuffer) oder weitere Einsparungen (Hebel 5).
 
 ### 3.6 Repository-Layout (Vorschlag)
 
@@ -179,9 +186,9 @@ sidecart_c64_emu/
 |---|---|---|---|---|
 | **R1** | Bandbreite ST ← Cartridge zu gering | ~~hoch~~ **gemessen** | mittel | 4,78 Zyklen/Byte, keine Waitstates (3.1). Dirty-Lines (bis ~180 Zeilen bei 50 fps), sonst 25 fps. ST-Double-Buffering |
 | **R2** | **Takt:** Das Template läuft mit 225 MHz, MCUME mit 250 MHz. Die PIO läuft mit Teiler 1, ihr Timing hängt also am Sys-Clock | ~~hoch~~ **niedrig** | hoch | 2026-11-17 vorläufig bestanden: Bei 250 MHz / 1,10 V gleicher Durchsatz wie bei 225 MHz. Dauertest mit 2 000 Durchläufen (~64 MB ROM4-Reads + 2 000 ROM3-Kommandos mit Rückleseprüfung) ohne Fehler. Offen: Langzeitlauf ≥ 30 min. Fallback: 1,15 V bzw. 225 MHz + Frameskip |
-| **R3** | CPU-Budget core0 reicht nicht für 50 Hz C64-Echtzeit | mittel–hoch | hoch | Messen. Heißen Code ins RAM (`__not_in_flash_func`). reSID entfällt bereits. Notfalls C64 langsamer als Echtzeit oder Rendering nur jeden 2. Frame |
-| **R4** | RAM: Bedarf ~198 KB bei 192 KB verfügbar (gemessen + geschätzt, 3.5) | hoch | hoch | Hebel aus 3.5: Netzwerk raus, Heap kleiner, ROMs im Flash, Backbuffer einsparen. Budget per `.map` prüfen |
-| **R5** | XIP-Cache-Misses (ROMs, `pla.cpp`, Opcode-Tabellen) bremsen | mittel | mittel | ROMs und heiße Funktionen ins RAM, mit/ohne messen |
+| **R3** | CPU-Budget reicht nicht für 50 Hz C64-Echtzeit | ~~mittel–hoch~~ **niedrig** | hoch | 2026-11-17 gemessen: Kern ungebremst auf core1 bei 250 MHz, BASIC-Bildschirm: 70,5 fps = 14,2 ms/Frame (141 % Echtzeit), ~6 ms Reserve pro Frame. Die VIC-Zeilen werden berechnet, aber noch verworfen. C2P läuft deshalb auf core0. Spiele mit vielen Sprites noch messen. Sonst: Heißen Code ins RAM (`__not_in_flash_func`). reSID entfällt bereits. Notfalls C64 langsamer als Echtzeit oder Rendering nur jeden 2. Frame |
+| **R4** | RAM: Bedarf ~198 KB bei 192 KB verfügbar (gemessen + geschätzt, 3.5) | hoch | hoch | Kern eingebaut: 25 KB frei (Netzwerk raus, Heap 24 KB, ROMs im Flash). Backbuffer (32 KB) passt nicht → Frontbuffer/Zeilen-Ringpuffer (3.5, Hebel 4) |
+| **R5** | XIP-Cache-Misses (ROMs, `pla.cpp`, Opcode-Tabellen) bremsen | ~~mittel~~ **niedrig** | mittel | 2026-11-17 gemessen: BASIC + KERNAL im RAM 70,4–70,6 fps, im Flash 70,5–70,6 fps, also kein Unterschied. ROMs bleiben im Flash. Bei Spielen nachmessen |
 | **R6** | Zeilenbasiertes Timing → Rastereffekte und manche Spiele falsch | sicher | mittel | Akzeptiert. Ziel: die meisten Spiele, keine Demos |
 | **R7** | **D64 ohne echte 1541:** Fastloader, Drive-Code und Kopierschutz laufen nicht | sicher | mittel–hoch | KERNAL-Laufwerk D1–D3. Kompatibilitätsliste führen. „Fixed“/gecrackte Versionen empfehlen |
 | **R8** | Trap-Kollisionen: Programme mit eigenem KERNAL-Ersatz/Patches oder KERNAL ausgeblendet ($01) | mittel | niedrig | Traps nur aktiv, wenn der KERNAL eingeblendet ist. Sonst normales (scheiterndes) IEC-Verhalten = „Device not present“ |
@@ -190,6 +197,7 @@ sidecart_c64_emu/
 | **R11** | SID→YM klingt zu schwach | mittel | niedrig | Früh mit typischen Tunes testen. ADSR-Modell und Update-Rate nachbessern |
 | **R12** | Debugging schwer, Hatari kennt das MD nicht | hoch | mittel | Host-Build (Emulator, C2P, D64, SID→YM komplett am PC testbar). UART/picoprobe |
 | **R13** | ST-Codelimit (`userfw.s` ≤ 6 KB) | niedrig | mittel | Schlanker Assembler. Bei Bedarf Code aus `APP_FREE` ins ST-RAM nachladen |
+| **R15** | **core1 und Flash:** Das Template nimmt an, dass core1 nie läuft (`PICO_FLASH_ASSUME_CORE0_SAFE=1`). Ein Flash-Schreibvorgang auf core0 nimmt core1 das XIP weg, und der Sprung zum Booster setzt core1 nicht zurück | **eingetreten** | hoch | 2026-11-17: Nach `x` lief der Emulator weiter, schrieb ins RAM des Boosters und brachte ihn zum Absturz (ST bootete ins GEM). Wiederhergestellt per Neu-Flashen. Fix 7ad5cfd: `c64host_stop()` (core1 in Reset) vor dem Booster-Sprung, `save`/`erase` und Werksreset. Später: core1 per `multicore_lockout` nur pausieren, damit Einstellungen im laufenden Betrieb gespeichert werden können |
 | **R14** | SD-Zugriffe während der Emulation stören Kommandoverarbeitung oder ROM-Emulation | mittel | mittel | SD nur auf core1, core0 wartet im Trap. Testen mit gleichzeitigem Frame-Polling |
 
 ## 5. Vorgehensplan
@@ -205,7 +213,7 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 ### Phase 1 – Machbarkeit (Go/No-Go)
 1. **R1:** ST kopiert 32 000 B aus `$FA2300` ins Video-RAM, Zeit messen. Mit Testbild vom RP. ✅ 2026-11-17: 19,1 ms/Bild (`movem.l`), siehe 3.1.
 2. **R2:** ROM-Emulation bei 250 MHz (und ggf. 1,15 V) im Langzeittest mit Prüfsummen. ✅ vorläufig, 2026-11-17: Dauertest der Test-Firmware (`D`) bei 225 und 250 MHz ohne Fehler (1 000 bzw. 2 000 Durchläufe). Build mit `make deploy RP_CLOCK_KHZ=250000`. Offen: Langzeitlauf ≥ 30 min.
-3. **R3–R5:** pico64-Kern mit Stubs in der MD-App, Frames/s bei 225 und 250 MHz, mit und ohne ROMs/Hot-Code im RAM. `.map`-Analyse für das RAM.
+3. **R3–R5:** pico64-Kern mit Stubs in der MD-App, Frames/s bei 225 und 250 MHz, mit und ohne ROMs/Hot-Code im RAM. `.map`-Analyse für das RAM. ✅ 2026-11-17 bei 250 MHz: 70,5 fps, ROMs im RAM ohne Gewinn, 25 KB RAM frei (3.5, R3–R5). Der C64 bootet bis „READY.“ (Bildschirmspeicher über Menü `C` geprüft). 225 MHz nicht gemessen; hochgerechnet ~63 fps.
 4. **R12:** Host-Build: Kern am PC, BASIC-Startbild als PPM.
 - **M1:** Messbericht → Takt, Frame-Rate-Ziel, Core-Aufteilung festlegen.
 
