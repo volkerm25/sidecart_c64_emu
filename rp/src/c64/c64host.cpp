@@ -1,9 +1,9 @@
 /**
  * File: c64host.cpp
  * Description: Runs the MCUME pico64 C64 core on core 1 of the RP2040 and
- * implements the MCUME platform API (emuapi.h) the core calls. This first
- * version is a speed test: no video output, no sound, no input, no files;
- * the core runs unthrottled and the host measures how long frames take.
+ * implements the MCUME platform API (emuapi.h) the core calls. The picture goes to
+ * the ST through c64video; no sound, no input, no files yet. The core runs
+ * unthrottled and the host measures how long frames take.
  * License: GPL v3
  */
 
@@ -16,6 +16,7 @@
 #include "pico/stdlib.h"
 
 extern "C" {
+#include "c64video.h"
 #include "emuapi.h"
 }
 
@@ -58,18 +59,26 @@ extern "C" unsigned int emu_FileSize(const char *filepath) {
   return 0;
 }
 
-// The VIC renders every line; for now the result is dropped.
+// The VIC renders 240 lines of 320 pixels: 20 border lines, the 200 lines of
+// the display area, 20 border lines. The palette holds the indices 0..15
+// (see core1Main), so the pixels are C64 colour indices. Only the display
+// area goes to the ST; the ST's own border shows the C64 border colour.
+#define C64HOST_TOP_BORDER_LINES 20
+
 extern "C" void emu_DrawLine16(unsigned short *VBuf, int width, int height,
                                int line) {
-  (void)VBuf;
   (void)width;
   (void)height;
-  (void)line;
+  int displayLine = line - C64HOST_TOP_BORDER_LINES;
+  if (displayLine >= 0 && displayLine < C64VIDEO_LINES) {
+    c64video_line(displayLine, VBuf);
+  }
 }
 
 // Called by the VIC at the end of every frame. MCUME waits here for its
 // 50 Hz timer; the speed test does not wait and only measures.
 extern "C" void emu_DrawVsync(void) {
+  c64video_frameEnd(cpu.vic.R[0x20]);
   uint32_t frames = frameCount + 1;
   frameCount = frames;
   if ((frames % C64HOST_WINDOW_FRAMES) == 0) {
@@ -105,6 +114,15 @@ char *menuSelection(void) {
 
 static void core1Main(void) {
   c64_Init();
+  // Make the VIC emit colour indices instead of RGB565: the palette becomes
+  // 0..15, and the colours it already translated from the registers
+  // ($D020-$D02E) are translated again.
+  for (int i = 0; i < 16; i++) {
+    cpu.vic.palette[i] = (uint16_t)i;
+  }
+  for (int i = 0; i < 15; i++) {
+    cpu.vic.colors[i] = cpu.vic.R[0x20 + i] & 0x0f;
+  }
   windowStartUs = time_us_32();
   hostRunning = true;
   while (true) {
@@ -116,6 +134,7 @@ extern "C" void c64host_start(void) {
 #if defined(C64_ROMS_IN_RAM) && (C64_ROMS_IN_RAM != 0)
   c64roms_copyToRam();
 #endif
+  c64video_init();
   multicore_launch_core1(core1Main);
 }
 

@@ -131,7 +131,6 @@ pico_generate_pio_header(${PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/commemul.pio)
 
 target_sources(${PROJECT_NAME} PRIVATE
         aconfig.c
-        bench.c
         blink.c
         chandler.c
         commemul.c
@@ -181,6 +180,8 @@ set_source_files_properties(${C64_CORE_SOURCES} ${C64_HOST_SOURCES} PROPERTIES
 set_source_files_properties(${C64_CORE_SOURCES}
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64roms.cpp PROPERTIES COMPILE_OPTIONS "-w")
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/c64)
+# The ST screen converter needs only the template's headers.
+target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/c64/c64video.c)
 # The emulator runs without Wi-Fi (see lwipopts.h and emul.c).
 add_compile_definitions(C64_NO_WIFI=1)
 # C64_ROMS_IN_RAM=1 in the environment of build.sh serves the C64 ROMs from

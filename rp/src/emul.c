@@ -12,7 +12,6 @@
 
 // inclusw in the C file to avoid multiple definitions
 #include "aconfig.h"
-#include "bench.h"
 #include "c64host.h"
 #include "chandler.h"
 #include "commemul.h"
@@ -526,9 +525,6 @@ void emul_start() {
             (unsigned)leftovers);
   }
 #endif
-
-  // Test image for the ST's copy-throughput measurement (APP_FREE).
-  bench_fillTestImage();
 
   // Initialize the cartridge ROM4 read engine. ROM4 reads are served entirely
   // by chained DMAs feeding the PIO TX FIFO — no CPU/IRQ involvement.
