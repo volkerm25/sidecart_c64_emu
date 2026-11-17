@@ -119,6 +119,11 @@ extern "C" void c64host_start(void) {
   multicore_launch_core1(core1Main);
 }
 
+extern "C" void c64host_stop(void) {
+  multicore_reset_core1();
+  hostRunning = false;
+}
+
 extern "C" void c64host_getStats(C64HostStats *stats) {
   stats->running = hostRunning;
   stats->frames = frameCount;

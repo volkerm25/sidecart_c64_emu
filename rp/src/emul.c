@@ -61,6 +61,7 @@ static void cmdPutInt(const char *arg);
 static void cmdPutBool(const char *arg);
 static void cmdPutString(const char *arg);
 static void cmdC64(const char *arg);
+static void emul_factoryReset(void);
 
 // Command table
 static const Command commands[] = {
@@ -329,6 +330,13 @@ void cmdBooster(const char *arg) {
   keepActive = false;         // Exit the active loop
 }
 
+// SELECT held 10 s: erase the global settings and restart. Core 1 must not
+// run from flash while the settings sector is erased.
+static void emul_factoryReset(void) {
+  c64host_stop();
+  reset_deviceAndEraseFlash();
+}
+
 void cmdSettings(const char *arg) {
   menuScreenActive = false;
   term_cmdSettings(arg);
@@ -341,11 +349,13 @@ void cmdPrint(const char *arg) {
 
 void cmdSave(const char *arg) {
   menuScreenActive = false;
+  c64host_stop();  // flash write: core 1 must not run from flash
   term_cmdSave(arg);
 }
 
 void cmdErase(const char *arg) {
   menuScreenActive = false;
+  c64host_stop();  // flash write: core 1 must not run from flash
   term_cmdErase(arg);
 }
 
@@ -560,7 +570,7 @@ void emul_start() {
   // and the RP restarts into Booster, which then clears every app's settings.
   select_configure();
   select_setResetCallback(reset_device);
-  select_setLongResetCallback(reset_deviceAndEraseFlash);
+  select_setLongResetCallback(emul_factoryReset);
 
   // 5. Init the sd card
   // Most of the apps or microfirmwares will need to read and write files
@@ -747,6 +757,8 @@ void emul_start() {
     // Reset the device
     reset_device();
   } else {
+    // Core 1 must not run from flash during the write, nor survive the jump.
+    c64host_stop();
     // Before jumping to the booster app, let's clean the settings
     // Set emulation mode to 255 (setup menu)
     settings_put_integer(aconfig_getContext(), ACONFIG_PARAM_MODE,

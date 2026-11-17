@@ -31,6 +31,12 @@ typedef struct {
 // Reset the C64 and start emulating it on core 1. Call once.
 void c64host_start(void);
 
+// Hold core 1 in reset. Call before anything that writes the flash or leaves
+// this app: core 1 executes the core from flash (XIP), which a flash write
+// takes away, and a jump to Booster does not reset core 1, so the emulator
+// would keep running and write into Booster's RAM.
+void c64host_stop(void);
+
 // A copy of the current speed figures.
 void c64host_getStats(C64HostStats *stats);
 
