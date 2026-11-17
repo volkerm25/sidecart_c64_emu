@@ -36,6 +36,12 @@ typedef struct {
   uint16_t pc;
   uint8_t a, x, y, sp;
   uint8_t code[3];
+  // Interrupt state: the 6510's I flag, VIC IRQ flags/mask ($D019/$D01A),
+  // CIA1 interrupt flags/mask ($DC0D read/written), CIA1 timer A control,
+  // the raster line and the raster IRQ line.
+  bool irqDisabled;
+  uint8_t vicIrq, vicMask, ciaIrq, ciaMask, ciaCra;
+  uint16_t rasterLine, rasterIrqLine;
 } C64HostStats;
 
 // Reset the C64 and start emulating it on core 1. Call once.

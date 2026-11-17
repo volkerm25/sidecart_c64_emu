@@ -61,7 +61,7 @@ void c64video_line(int line, const uint16_t *pixels);
 // characters each) over the top of the picture, or with NULL remove them.
 // For diagnosis: it is drawn from core 0's main loop, so it shows even when
 // core 1 has stopped.
-#define C64VIDEO_OVERLAY_ROWS 2
+#define C64VIDEO_OVERLAY_ROWS 3
 void c64video_setOverlay(const char *const rows[C64VIDEO_OVERLAY_ROWS]);
 
 // Core 1: the frame is complete. Core 0 publishes its number and takes the

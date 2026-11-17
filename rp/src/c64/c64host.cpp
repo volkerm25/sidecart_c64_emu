@@ -197,6 +197,14 @@ extern "C" void c64host_getStats(C64HostStats *stats) {
   for (int i = 0; i < 3; i++) {
     stats->code[i] = cpu.RAM[(uint16_t)(pc + i)];
   }
+  stats->irqDisabled = (cpu.cpustatus & 0x04) != 0;
+  stats->vicIrq = cpu.vic.R[0x19];
+  stats->vicMask = cpu.vic.R[0x1a];
+  stats->ciaIrq = cpu.cia1.R[0x0d];
+  stats->ciaMask = cpu.cia1.W[0x0d];
+  stats->ciaCra = cpu.cia1.W[0x0e];
+  stats->rasterLine = (uint16_t)cpu.vic.rasterLine;
+  stats->rasterIrqLine = (uint16_t)cpu.vic.intRasterLine;
 }
 
 // C64 screen codes to ASCII: 0 '@', 1..26 letters, 27..63 as in ASCII,

@@ -157,7 +157,7 @@ static void __not_in_flash_func(emul_pollTick)(void) {
 
 // The diagnostic overlay on the C64 picture (keypad '(' on the ST), redrawn
 // five times a second: frame count and 6510 state, the bytes at the PC, the
-// slowest frame, and the LOADs served. Drawn from here, it shows even when
+// slowest frame, the LOADs served, and the interrupt state. Drawn from here, it shows even when
 // core 1 has stopped; then the frame count stands still.
 #define OVERLAY_REFRESH_MS 200
 
@@ -180,12 +180,18 @@ static void emul_updateOverlay(void) {
   c64drive_getLoadStats(&loads, &lastLoad);
   char row0[41];
   char row1[41];
+  char row2[41];
   snprintf(row0, sizeof(row0), "F%08lu PC%04X A%02X X%02X Y%02X S%02X",
            (unsigned long)st.frames, st.pc, st.a, st.x, st.y, st.sp);
   snprintf(row1, sizeof(row1), "OP %02X %02X %02X WORST%6luUS LOAD%u R%d",
            st.code[0], st.code[1], st.code[2], (unsigned long)st.worstFrameUs,
            loads, lastLoad);
-  const char *const rows[C64VIDEO_OVERLAY_ROWS] = {row0, row1};
+  // I: 6510 IRQs masked; V: VIC flags/mask; C: CIA1 flags/mask; T: CIA1
+  // timer A control; R: raster line / raster IRQ line.
+  snprintf(row2, sizeof(row2), "I%d V%02X/%02X C%02X/%02X T%02X R%03u/%03u",
+           st.irqDisabled ? 1 : 0, st.vicIrq, st.vicMask, st.ciaIrq,
+           st.ciaMask, st.ciaCra, st.rasterLine, st.rasterIrqLine);
+  const char *const rows[C64VIDEO_OVERLAY_ROWS] = {row0, row1, row2};
   c64video_setOverlay(rows);
   shown = true;
 }
