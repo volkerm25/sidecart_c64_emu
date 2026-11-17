@@ -1,6 +1,6 @@
 # C64-Emulator auf dem SidecarTridge Multi-device – Architektur, Risiken, Plan
 
-Stand: 2026-11-17 · Status: Entwurf v1.1 (M5 erreicht: Ton über den YM2149)
+Stand: 2026-11-17 · Status: Entwurf v1.2 (Phase 6 läuft: Disk-Menü am ST fertig)
 
 ## 1. Ziel und Rahmenbedingungen
 
@@ -275,7 +275,7 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
   - Sprite-Multiplexing mit um eine Zeile verschobenem Raster-IRQ
   - eine Zeile, die sich ändert, während der ST sie kopiert (wird einen Durchlauf später korrigiert)
   - Zur Unterscheidung: Auf dem PC mit dem Host-Build vergleichen oder auf dem ST bei 25 fps (volle Kopie) beobachten.
-- Noch offen aus D1: Disk-Auswahl am ST (F10-Menü statt RP-Menü), Auto-Start, Disk-Wechsel ohne Reset. Außerdem ROMs von SD (R9, vor einer Veröffentlichung nötig).
+- Disk-Auswahl am ST, Auto-Start und Disk-Wechsel ohne Reset: in Phase 6 erledigt (Disk-Menü). Noch offen: ROMs von SD (R9, vor einer Veröffentlichung nötig).
 
 ### Phase 5 – Ton
 - SID-Registerfile, SID→YM auf core1, YM-Ausgabe im ST-VBL. Feintuning des ADSR-Modells.
@@ -285,6 +285,16 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 - **D2:** serielle KERNAL-Traps, Kommandokanal, SEQ-Dateien. **D3:** SAVE/Schreiben ins D64.
 - Kompatibilitätsliste, Performance-Tuning, NTSC-Option, Frameskip-Einstellung über `aconfig`.
 - Release: UF2 + JSON für den Booster.
+
+**Disk-Menü ✅ (aec10c5, bestätigt 2026-11-17):**
+- F10 öffnet `rp/src/c64/c64menu.c` als Text über dem C64-Bild. Er nutzt die erweiterte Text-Einblendung mit beliebig vielen Zeilen, einer invertierten Zeile und dem zweiten Zeichensatz (Groß/Klein).
+- Der C64 pausiert zwischen zwei Rasterzeilen, der YM ist stumm, und der C64 sieht keine Tasten.
+- Tasten:
+  - Cursor wählt bzw. blättert (18 pro Seite).
+  - RETURN legt ein, ohne Reset.
+  - Leertaste legt ein und startet per Reset und Autostart: `L`+`⇧O"*",8,1` in den Tastaturpuffer, sobald der KERNAL auf eine Taste wartet (PC `$E5CD`–`$E5D6`), `RUN` nach erfolgreichem LOAD.
+  - R setzt zurück, Q führt zum Desktop, F10/Esc schließt.
+- Q läuft über einen Zähler im Cartridge-Fenster: Der ST verlässt die Anzeige, wenn er sich ändert. F10 beendet die Anzeige nicht mehr.
 
 ## 6. Offene Punkte
 
