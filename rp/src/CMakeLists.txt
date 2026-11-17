@@ -157,6 +157,39 @@ target_sources(${PROJECT_NAME} PRIVATE
 pico_add_extra_outputs(${PROJECT_NAME})
 
 # Link libraries required for the project
+# C64 emulator core: MCUME pico64 (third_party/MCUME, never edited in place)
+# plus the host layer in c64/. The core's own headers come first for its
+# sources, so its settings.h does not collide with settings/settings.h.
+# reSID and MCUME's display/ platform layer are not built.
+set(MCUME_PICO64_DIR ${CMAKE_CURRENT_LIST_DIR}/../../third_party/MCUME/MCUME_pico/pico64)
+set(C64_CORE_SOURCES
+    ${MCUME_PICO64_DIR}/c64.cpp
+    ${MCUME_PICO64_DIR}/cia1.cpp
+    ${MCUME_PICO64_DIR}/cia2.cpp
+    ${MCUME_PICO64_DIR}/cpu.cpp
+    ${MCUME_PICO64_DIR}/patches.cpp
+    ${MCUME_PICO64_DIR}/pla.cpp
+    ${MCUME_PICO64_DIR}/timerutil.cpp
+    ${MCUME_PICO64_DIR}/vic.cpp)
+set(C64_HOST_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/c64/c64host.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/c64/c64roms.cpp)
+target_sources(${PROJECT_NAME} PRIVATE ${C64_CORE_SOURCES} ${C64_HOST_SOURCES})
+set_source_files_properties(${C64_CORE_SOURCES} ${C64_HOST_SOURCES} PROPERTIES
+    INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/c64;${MCUME_PICO64_DIR}")
+# Third-party code: its warnings are not ours to fix.
+set_source_files_properties(${C64_CORE_SOURCES}
+    ${CMAKE_CURRENT_LIST_DIR}/c64/c64roms.cpp PROPERTIES COMPILE_OPTIONS "-w")
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/c64)
+# The emulator runs without Wi-Fi (see lwipopts.h and emul.c).
+add_compile_definitions(C64_NO_WIFI=1)
+# C64_ROMS_IN_RAM=1 in the environment of build.sh serves the C64 ROMs from
+# RAM instead of flash: BASIC and KERNAL, 16 KB (see c64/c64roms.cpp).
+if(DEFINED ENV{C64_ROMS_IN_RAM} AND "$ENV{C64_ROMS_IN_RAM}" STREQUAL "1")
+    add_compile_definitions(C64_ROMS_IN_RAM=1)
+    message(STATUS "C64 ROMs in RAM")
+endif()
+
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ${LINK_LIBRARIES}        # External or additional libraries passed as variables
     hardware_flash           # Flash memory access
@@ -334,10 +367,12 @@ add_definitions(-DPICO_FLASH_ASSUME_CORE0_SAFE=1)
 # with the setup menu: 1,696 bytes at the deepest. PICO_HEAP_SIZE is the heap
 # the link guarantees: a build whose static data leaves less fails to link.
 # Measured: 13.1 KB of heap at the peak after boot and the menu commands.
+# The C64 emulator needs the RAM: 24 KB of heap instead of the template's 32,
+# still nearly twice the measured peak (and Wi-Fi stays off).
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     PICO_STACK_SIZE=0x1000
     PICO_USE_STACK_GUARDS=1
-    PICO_HEAP_SIZE=0x8000)
+    PICO_HEAP_SIZE=0x6000)
 
 # HTTP only, or HTTP and HTTPS downloads (see APP_DOWNLOAD_HTTPS above)
 add_definitions(-DAPP_DOWNLOAD_HTTPS=${APP_DOWNLOAD_HTTPS})

@@ -17,7 +17,8 @@ PICO_TOOLCHAIN_PATH ?= $(HOME)/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-e
 DEV_UF2 = dist/$(DEV_UUID)-$(VERSION).uf2
 # Optional system clock / core voltage override, e.g.
 #   make deploy RP_CLOCK_KHZ=250000 RP_VOLTAGE=VREG_VOLTAGE_1_15
-export RP_CLOCK_KHZ RP_VOLTAGE
+# C64_ROMS_IN_RAM=1 serves BASIC and KERNAL from RAM instead of flash.
+export RP_CLOCK_KHZ RP_VOLTAGE C64_ROMS_IN_RAM
 
 .PHONY: build deploy upload launch
 build:

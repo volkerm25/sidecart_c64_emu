@@ -13,6 +13,7 @@
 // inclusw in the C file to avoid multiple definitions
 #include "aconfig.h"
 #include "bench.h"
+#include "c64host.h"
 #include "chandler.h"
 #include "commemul.h"
 #include "constants.h"
@@ -59,6 +60,7 @@ static void cmdGet(const char *arg);
 static void cmdPutInt(const char *arg);
 static void cmdPutBool(const char *arg);
 static void cmdPutString(const char *arg);
+static void cmdC64(const char *arg);
 
 // Command table
 static const Command commands[] = {
@@ -66,6 +68,7 @@ static const Command commands[] = {
     {"h", cmdHelp},
     {"e", cmdExit},
     {"f", cmdFirmware},
+    {"c", cmdC64},
     {"x", cmdBooster},
     {"?", cmdHelp},
     {"s", cmdSettings},
@@ -213,7 +216,8 @@ static void menu(void) {
   showTitle();
   term_printString("\n");
   term_printString("[S]ettings     | [F]irmware launch\n");
-  term_printString("[E]xit desktop | [X] Back to Booster\n\n");
+  term_printString("[E]xit desktop | [X] Back to Booster\n");
+  term_printString("[C]64 speed test\n\n");
   atariLine(atariLineShown, sizeof(atariLineShown));
   term_printString(atariLineShown);
   term_printString("\n");
@@ -229,6 +233,52 @@ static void menu(void) {
 
 // Command handlers
 void cmdMenu(const char *arg) { menu(); }
+
+// The C64 speed test: raw speed of the emulator core on core 1, and its text
+// screen, to show that it booted. Enter 'c' again to refresh, 'm' for the menu.
+void cmdC64(const char *arg) {
+  (void)arg;
+  menuScreenActive = false;
+  C64HostStats st;
+  c64host_getStats(&st);
+  char line[TERM_SCREEN_SIZE_X + 8];
+  showTitle();
+  if (!st.running) {
+    term_printString("C64 core not running.\n");
+    return;
+  }
+  // fps x10 over the last window of C64HOST_WINDOW_FRAMES frames.
+  uint32_t fps10 = st.lastWindowUs
+                       ? (uint32_t)(C64HOST_WINDOW_FRAMES * 10000000ULL /
+                                    st.lastWindowUs)
+                       : 0;
+  uint32_t best10 = st.bestWindowUs
+                        ? (uint32_t)(C64HOST_WINDOW_FRAMES * 10000000ULL /
+                                     st.bestWindowUs)
+                        : 0;
+  uint32_t worst10 = st.worstWindowUs
+                         ? (uint32_t)(C64HOST_WINDOW_FRAMES * 10000000ULL /
+                                      st.worstWindowUs)
+                         : 0;
+  snprintf(line, sizeof(line), "ROMs %s, %lu frames\n",
+           st.romsInRam ? "RAM" : "flash", (unsigned long)st.frames);
+  term_printString(line);
+  snprintf(line, sizeof(line), "fps %lu.%lu (%lu.%lu..%lu.%lu) %lu us/f\n",
+           (unsigned long)(fps10 / 10), (unsigned long)(fps10 % 10),
+           (unsigned long)(worst10 / 10), (unsigned long)(worst10 % 10),
+           (unsigned long)(best10 / 10), (unsigned long)(best10 % 10),
+           (unsigned long)(st.lastWindowUs / C64HOST_WINDOW_FRAMES));
+  term_printString(line);
+  // The upper part of the C64 screen, where READY. appears after the boot.
+  for (int row = 0; row < 12; row++) {
+    char text[41];
+    c64host_getScreenRow(row, text);
+    text[39] = '\0';  // keep the terminal from wrapping
+    snprintf(line, sizeof(line), "%s\n", text);
+    term_printString(line);
+  }
+  term_printString("[C] refresh  [M] menu\n");
+}
 
 void cmdHelp(const char *arg) {
   menuScreenActive = false;
@@ -562,6 +612,11 @@ void emul_start() {
   SettingsConfigEntry *wifiMode =
       settings_find_entry(gconfig_getContext(), PARAM_WIFI_MODE);
   wifi_mode_t wifiModeValue = WIFI_MODE_STA;
+#if defined(C64_NO_WIFI) && (C64_NO_WIFI != 0)
+  // The C64 emulator leaves Wi-Fi off: no RAM for lwIP's buffers, and no
+  // network traffic competing with the emulator for the flash cache.
+  wifiMode = NULL;
+#endif
   if (wifiMode == NULL) {
     DPRINTF("No WiFi mode found in the settings. No initializing.\n");
   } else {
@@ -621,6 +676,9 @@ void emul_start() {
   // For testing purposes, this app only shows commands to manage the settings
   // Debug builds only: serve the SWD mailbox of tools/dev/swd.py
   devhooks_setAppHandler(emul_devhooksApp);
+
+  // Start the C64 core on core 1 (speed test: unthrottled, no output).
+  c64host_start();
 
   DPRINTF("Start the app loop here\n");
   absolute_time_t nextNetworkPoll = get_absolute_time();

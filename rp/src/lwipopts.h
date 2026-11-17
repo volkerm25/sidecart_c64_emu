@@ -53,11 +53,24 @@
 // HTTP profile (the default): the template's sizes. Peaks measured over every
 // test download: 5 of 12 pool pbufs, 4 of 16 segments, 1 TCP pcb, no failed
 // allocation.
+#if defined(C64_NO_WIFI) && (C64_NO_WIFI != 0)
+// The C64 emulator does not bring Wi-Fi up (C64_NO_WIFI): lwIP is still
+// linked, so the pools are cut to the minimum to give the RAM to the emulator.
+#define MEMP_NUM_PBUF 2
+#define MEMP_NUM_TCP_PCB 1
+#define MEMP_NUM_TCP_SEG 4
+#define MEMP_NUM_ARP_QUEUE 1
+#define PBUF_POOL_SIZE 2
+// Never used at these sizes (Wi-Fi stays off), so the TCP sanity checks that
+// compare the pools with TCP_WND / TCP_SND_QUEUELEN do not apply.
+#define LWIP_DISABLE_TCP_SANITY_CHECKS 1
+#else
 #define MEMP_NUM_PBUF 8
 #define MEMP_NUM_TCP_PCB 4
 #define MEMP_NUM_TCP_SEG 16
 #define MEMP_NUM_ARP_QUEUE 2
 #define PBUF_POOL_SIZE 12
+#endif
 #endif
 #define LWIP_ARP 1
 #define LWIP_ETHERNET 1
