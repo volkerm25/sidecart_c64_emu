@@ -21,9 +21,10 @@
 ; A full screen of changes takes about 19 ms to copy (25 frames/s on the
 ; ST); a few changed lines leave it at 50.
 ;
-; Keyboard and joysticks: the viewer takes over the ACIA interrupt ($118)
-; with a handler that keeps one bit per scancode, and puts the IKBD into
-; joystick event mode (mouse off). The handler is copied into the RAM block,
+; Keyboard and joystick: the viewer takes over the ACIA interrupt ($118)
+; with a handler that keeps one bit per scancode. The IKBD stays in TOS's
+; mode: mouse packets for the mouse port, which the handler skips, and
+; joystick events for the joystick port. The handler is copied into the RAM block,
 ; so that its state, behind it, is reachable PC-relative. Whenever the state
 ; changed, the main loop sends all of it, 16 bytes, as C64INPUT_CMD; the RP
 ; maps it onto the C64 (rp/src/c64/c64input.h has the layout). F10 returns
@@ -72,7 +73,6 @@ IKBD_DATA		equ $fffffc02
 MIDI_CTRL		equ $fffffc04
 MIDI_DATA		equ $fffffc06
 MFP_ISRB		equ $fffffa11
-XB_Ikbdws		equ 25
 
 XB_Physbase		equ 2
 XB_Getrez		equ 4
@@ -134,19 +134,14 @@ userfw:
 	cmp.w	#16, d7
 	bne.s	.save_pal
 
-	; The ACIA handler: copy it with its (zeroed) variables, put the IKBD
-	; into joystick event mode, then take the vector.
+	; The ACIA handler: copy it with its (zeroed) variables, then take the
+	; vector.
 	lea	irq_start(pc), a0
 	lea	ST_IRQ(a4), a1
 	move.w	#(irq_end-irq_start)/2-1, d0
 .copy_irq:
 	move.w	(a0)+, (a1)+
 	dbra	d0, .copy_irq
-	pea	ikbd_joystick_mode(pc)
-	move.w	#1, -(sp)		; 2 bytes
-	move.w	#XB_Ikbdws, -(sp)
-	trap	#14
-	addq.l	#8, sp
 	move.w	sr, -(sp)
 	move.w	#$2700, sr
 	move.l	ACIA_VECTOR.w, ST_OLD_ACIA(a4)
@@ -216,17 +211,12 @@ userfw:
 	bra	.frame
 
 .leave:
-	; Back to the desktop: TOS's ACIA handler and mouse, TOS's screen and
-	; palette, free the block.
+	; Back to the desktop: TOS's ACIA handler, screen and palette, free the
+	; block.
 	move.w	sr, -(sp)
 	move.w	#$2700, sr
 	move.l	ST_OLD_ACIA(a4), ACIA_VECTOR.w
 	move.w	(sp)+, sr
-	pea	ikbd_mouse_mode(pc)
-	clr.w	-(sp)			; 1 byte
-	move.w	#XB_Ikbdws, -(sp)
-	trap	#14
-	addq.l	#8, sp
 	move.l	ST_SCREENS(a4), d0
 	bsr	set_screen
 	pea	ST_PALETTE_SAVE(a4)
@@ -346,13 +336,6 @@ irq_packet_bytes:
 irq_vars:
 	ds.b	V_SIZE
 irq_end:
-
-; IKBD commands: mouse off, joystick event reporting; back to the mouse.
-ikbd_joystick_mode:
-	dc.b	$12, $14
-ikbd_mouse_mode:
-	dc.b	$08
-	even
 
 ; Wait for a key; ASCII code in d0.b.
 wait_key:
