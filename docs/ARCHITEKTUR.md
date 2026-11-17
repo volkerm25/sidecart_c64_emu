@@ -1,6 +1,6 @@
 # C64-Emulator auf dem SidecarTridge Multi-device – Architektur, Risiken, Plan
 
-Stand: 2026-11-17 · Status: Entwurf v0.6 (Phase 1: ST-Durchsatz, 250 MHz und Emulator-Geschwindigkeit gemessen)
+Stand: 2026-11-17 · Status: Entwurf v0.7 (M1 entschieden, M2 erreicht: C64-Bild auf dem ST)
 
 ## 1. Ziel und Rahmenbedingungen
 
@@ -186,7 +186,7 @@ sidecart_c64_emu/
 |---|---|---|---|---|
 | **R1** | Bandbreite ST ← Cartridge zu gering | ~~hoch~~ **gemessen** | mittel | 4,78 Zyklen/Byte, keine Waitstates (3.1). Dirty-Lines (bis ~180 Zeilen bei 50 fps), sonst 25 fps. ST-Double-Buffering |
 | **R2** | **Takt:** Das Template läuft mit 225 MHz, MCUME mit 250 MHz. Die PIO läuft mit Teiler 1, ihr Timing hängt also am Sys-Clock | ~~hoch~~ **niedrig** | hoch | 2026-11-17 vorläufig bestanden: Bei 250 MHz / 1,10 V gleicher Durchsatz wie bei 225 MHz. Dauertest mit 2 000 Durchläufen (~64 MB ROM4-Reads + 2 000 ROM3-Kommandos mit Rückleseprüfung) ohne Fehler. Offen: Langzeitlauf ≥ 30 min. Fallback: 1,15 V bzw. 225 MHz + Frameskip |
-| **R3** | CPU-Budget reicht nicht für 50 Hz C64-Echtzeit | ~~mittel–hoch~~ **niedrig** | hoch | 2026-11-17 gemessen: Kern ungebremst auf core1 bei 250 MHz, BASIC-Bildschirm: 70,5 fps = 14,2 ms/Frame (141 % Echtzeit), ~6 ms Reserve pro Frame. Die VIC-Zeilen werden berechnet, aber noch verworfen. C2P läuft deshalb auf core0. Spiele mit vielen Sprites noch messen. Sonst: Heißen Code ins RAM (`__not_in_flash_func`). reSID entfällt bereits. Notfalls C64 langsamer als Echtzeit oder Rendering nur jeden 2. Frame |
+| **R3** | CPU-Budget reicht nicht für 50 Hz C64-Echtzeit | ~~mittel–hoch~~ **niedrig** | hoch | 2026-11-17 gemessen bei 250 MHz, BASIC-Bildschirm: Kern allein 70,5 fps. Mit Bildausgabe (C2P auf core0) 68,6 fps ungebremst bzw. 75 % Last im 50-Hz-Takt, schlechtestes Bild 96 % (vermutlich XIP-Konkurrenz durch core0). Spiele mit vielen Sprites noch messen. Sonst: Heißen Code ins RAM (`__not_in_flash_func`). reSID entfällt bereits. Notfalls C64 langsamer als Echtzeit oder Rendering nur jeden 2. Frame |
 | **R4** | RAM: Bedarf ~198 KB bei 192 KB verfügbar (gemessen + geschätzt, 3.5) | hoch | hoch | Kern eingebaut: 25 KB frei (Netzwerk raus, Heap 24 KB, ROMs im Flash). Backbuffer (32 KB) passt nicht → Frontbuffer/Zeilen-Ringpuffer (3.5, Hebel 4) |
 | **R5** | XIP-Cache-Misses (ROMs, `pla.cpp`, Opcode-Tabellen) bremsen | ~~mittel~~ **niedrig** | mittel | 2026-11-17 gemessen: BASIC + KERNAL im RAM 70,4–70,6 fps, im Flash 70,5–70,6 fps, also kein Unterschied. ROMs bleiben im Flash. Bei Spielen nachmessen |
 | **R6** | Zeilenbasiertes Timing → Rastereffekte und manche Spiele falsch | sicher | mittel | Akzeptiert. Ziel: die meisten Spiele, keine Demos |
@@ -215,11 +215,18 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 2. **R2:** ROM-Emulation bei 250 MHz (und ggf. 1,15 V) im Langzeittest mit Prüfsummen. ✅ vorläufig, 2026-11-17: Dauertest der Test-Firmware (`D`) bei 225 und 250 MHz ohne Fehler (1 000 bzw. 2 000 Durchläufe). Build mit `make deploy RP_CLOCK_KHZ=250000`. Offen: Langzeitlauf ≥ 30 min.
 3. **R3–R5:** pico64-Kern mit Stubs in der MD-App, Frames/s bei 225 und 250 MHz, mit und ohne ROMs/Hot-Code im RAM. `.map`-Analyse für das RAM. ✅ 2026-11-17 bei 250 MHz: 70,5 fps, ROMs im RAM ohne Gewinn, 25 KB RAM frei (3.5, R3–R5). Der C64 bootet bis „READY.“ (Bildschirmspeicher über Menü `C` geprüft). 225 MHz nicht gemessen; hochgerechnet ~63 fps.
 4. **R12:** Host-Build: Kern am PC, BASIC-Startbild als PPM.
-- **M1:** Messbericht → Takt, Frame-Rate-Ziel, Core-Aufteilung festlegen.
+- **M1:** Messbericht → Takt, Frame-Rate-Ziel, Core-Aufteilung festlegen. ✅ 2026-11-17: 250 MHz, 50 Hz (PAL-Takt), core1 = C64-Kern, core0 = Bildumwandlung, Kommandokanal, SD.
 
 ### Phase 2 – Bild
 - Indexausgabe, C2P, Frame-Handshake, ST-Kopierroutine, Palette. Dann Dirty-Lines und Border-Permutation.
-- **M2:** „READY.“ mit blinkendem Cursor auf dem ST.
+- **M2:** „READY.“ mit blinkendem Cursor auf dem ST. ✅ 2026-11-17, umgesetzt so:
+  - Die VIC-Palette ist auf die Indizes 0–15 umgestellt, der VIC liefert also Farbnummern statt RGB565. Am Kern ist dafür nichts geändert.
+  - core1 kopiert jede Zeile des Anzeigebereichs (Zeilen 20–219 der 240 VIC-Zeilen) in einen von 8 Slots und meldet sie über die Inter-Core-FIFO. Der FIFO-Interrupt auf core0 wandelt sie per Tabelle in ST-Bitplanes im Cartridge-Fenster um. Ändert sich eine Zeile, bekommt sie die laufende Bildnummer als Stempel. Das Bildende läuft durch dieselbe FIFO.
+  - Die C64-Rahmenfarbe liegt auf ST-Index 0 (Tausch mit Schwarz), so dass der ST-Rand sie zeigt.
+  - Der ST schreibt nichts zurück. Er zeichnet in zwei Bildschirme im Wechsel, kopiert Zeilen mit `(int16)(Stempel − Stand des Bildschirms) > 0`, schaltet im VBL um und setzt dann die Palette.
+  - Layout: `rp/src/c64/c64video.h`.
+  - Gemessen: Die Umwandlung kostet ~3,4 ms pro Bild. Auf core1 wäre das zu viel (54–57 fps ungebremst), deshalb läuft sie auf core0. Die Übergabe kostet core1 0,54 ms pro Bild, ungebremst 68,6 fps. Mit 50-Hz-Takt: Last 75 %, schlechtestes Bild 96 %.
+  - Offen: Palette und Pixel wechseln bei einer Änderung der Rahmenfarbe nicht im selben Bild (ein Bild mit falschen Farben). Sprites im Seitenrand fehlen (pico64 rendert keine).
 
 ### Phase 3 – Eingabe
 - IKBD-Handler, `FRAME_REQ` mit Eingabedaten, Scancode-Matrix, Joystick, Joystick tauschen.
