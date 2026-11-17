@@ -15,8 +15,13 @@
  *   Clr/Home    CLR/HOME
  *   Backspace, Delete   INST/DEL
  *   Insert      the pound sign
- *   F9          swap the joystick ports (default: the ST's joystick port is
- *               the C64's port 2, the mouse port its port 1)
+ *   F9          moves the ST's joystick from the C64's port 2 to port 1
+ *               and back
+ *
+ * The mouse port (IKBD joystick 0) is not mapped: a mouse at rest can hold
+ * its lines in any state, which the IKBD reports as directions held, and
+ * the C64's port 1 shares its lines with the keyboard rows, so the keyboard
+ * stopped working.
  *   F10         leaves the viewer (handled on the ST)
  */
 
@@ -206,12 +211,9 @@ static void applyState(const uint8_t *keys) {
   if (helpDown && !helpWasDown) c64input_restorePressed = true;
   helpWasDown = helpDown;
 
-  // ST joystick port -> C64 port 2, mouse port -> C64 port 1, unless swapped.
+  // ST joystick port -> C64 port 2, or port 1 if swapped.
   uint16_t joyPort = joyBits(keys[15]);
-  uint8_t mouseByte = (uint8_t)(((keys[14] >> 3) & 0x0Fu) | (keys[14] & 0x80u));
-  uint16_t mousePort = joyBits(mouseByte);
-  c64input_pad = swapPorts ? (uint16_t)(mousePort | (joyPort << 8))
-                           : (uint16_t)(joyPort | (mousePort << 8));
+  c64input_pad = swapPorts ? (uint16_t)(joyPort << 8) : joyPort;
 }
 
 static void __not_in_flash_func(commandCb)(TransmissionProtocol *protocol,

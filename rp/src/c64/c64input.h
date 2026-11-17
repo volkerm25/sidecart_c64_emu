@@ -12,7 +12,8 @@
  *   byte 15  joystick 1 (the joystick port) as the IKBD reports it:
  *            bit 0 up, 1 down, 2 left, 3 right, 7 fire
  *   byte 14  bits 3-6 joystick 0 (the mouse port) up/down/left/right,
- *            bit 7 its fire button (bits 0-2 are the keypad's 0 . Enter)
+ *            bit 7 its fire button (bits 0-2 are the keypad's 0 . Enter);
+ *            not mapped to the C64 (see c64input.c)
  *
  * The whole state travels every time, so a command the ST repeats does no
  * harm.
@@ -34,8 +35,8 @@ extern "C" {
 // Written by core 0, read by the C64 core on core 1.
 // Per keyboard column (CIA1 port A bit), the rows (port B bits) pressed.
 extern volatile uint8_t c64input_keyMatrix[8];
-// Joysticks as MASK_JOY1_* / MASK_JOY2_* bits (emuapi.h), ports swapped
-// already if the user asked for it.
+// Joysticks as MASK_JOY1_* / MASK_JOY2_* bits (emuapi.h): the ST's joystick
+// on the port the user chose.
 extern volatile uint16_t c64input_pad;
 // RESTORE was pressed; core 1 raises the NMI and clears it.
 extern volatile bool c64input_restorePressed;
