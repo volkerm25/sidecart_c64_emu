@@ -256,12 +256,10 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
   - SAVE und andere Geräte laufen weiter in den seriellen KERNAL-Code: DEVICE NOT PRESENT.
   - RP-Menü: `D` listet die D64 in `/c64`, `D <n>` mountet. Die Seite `C` zeigt das gemountete Image.
 - Bestätigt: Hexenküche (`/c64/Hexenkueche_(HTW).d64`) lädt, startet und zeigt das Titelbild mit Animation.
-- **Offen 1: Feuerknopf des Joysticks.**
-  - Im TOS-Mausmodus kommt das Feuer des Joystickports weder im Joystick-Paket (`$FF`, Bit 7) noch als Maustaste im Kopf der Mauspakete an. Nur die echte Maustaste löst Feuer aus, Stand afe7d85.
-  - Nächster Schritt: den IKBD wieder auf Joystick-Event-Mode schalten (`$14`, ggf. ohne `$12`) und die Port-Zuordnung dort nachmessen. Dort kam der Joystickport als Joystick 0 (`$FE`) an. Alternativ Joystick-Abfrage per Interrogation (`$15`/`$16`).
-  - Rohdaten am besten im RP-Menü anzeigen lassen: Byte 14/15 und Bit 0 der Tastenmaske.
-- **Offen 2: Hexenküche stürzt nach einiger Zeit ab.**
-  - Noch nicht untersucht. Zu klären: Hängt nur der C64 (Bild steht, ST reagiert noch auf F10) oder der RP (Menü nach SELECT, Seite `C`: läuft der Frame-Zähler weiter)?
+- **Feuerknopf des Joysticks: gelöst** (afe7d85). Im TOS-Mausmodus kommt das Feuer des Joystickports als Maustaste im Kopf der Mauspakete. Der Handler legt diese Bits auf Scancode-Bit 0, der RP wertet sie als Feuer. Im ersten Test löste nur die Maustaste Feuer aus. Nach einem Neustart des SidecarTridge funktionierte auch der Joystick-Knopf (2026-11-17). Nebeneffekt: Ein Mausklick feuert ebenfalls.
+- **Offen: Hexenküche stürzt nach einiger Zeit ab** (reproduzierbar).
+  - Beobachtet: Der ST reagiert danach noch auf F10. Die ST-Anzeigeschleife und ihr ACIA-Handler laufen also weiter, das Problem liegt beim C64 oder beim RP.
+  - Noch zu klären: Läuft der RP weiter? Dazu im Menü (SELECT, ST-Reset) die Seite `C` aufrufen und prüfen, ob der Frame-Zähler steigt und was der C64-Bildschirmspeicher zeigt. Kommt der ST nach SELECT nicht ins Menü, hängt der RP.
   - Kandidaten: Lädt das Spiel nach (zweiter LOAD, eigener Lader, R7)? Genauigkeit von pico64? Die Abwesenheit von SID (Spiel wartet auf SID-Register oder Paddles)?
   - Debug-Ausgabe über UART fehlt bisher (kein Probe angeschlossen).
 
