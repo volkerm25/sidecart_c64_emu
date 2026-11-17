@@ -265,7 +265,9 @@ wait_vbl:
 ; ACIA interrupt handler (keyboard, MIDI). Runs as a copy in the RAM block;
 ; irq_vars travels with it. Keys set or clear their bit in V_KEYS; joystick
 ; packets ($FE joystick 0, $FF joystick 1) go to key bytes 14 and 15 (layout
-; in rp/src/c64/c64input.h); other packets are skipped. MIDI bytes are
+; in rp/src/c64/c64input.h); the mouse buttons in a mouse packet's header,
+; where the joystick port's fire button arrives, go to scancode bit 0;
+; other packet bytes are skipped. MIDI bytes are
 ; dropped. TOS runs the MFP in software end-of-interrupt mode.
 irq_start:
 	movem.l	d0-d2/a0, -(sp)
@@ -313,8 +315,29 @@ irq_start:
 	st	V_CHANGED(a0)
 	bra.s	.next
 .header:
+	move.b	d0, d1			; the header itself
 	sub.b	#$f6, d0
 	move.b	irq_packet_bytes(pc,d0.w), V_SKIP(a0)
+	cmp.b	#$f8-$f6, d0
+	blo.s	.not_mouse
+	cmp.b	#$fb-$f6, d0
+	bhi.s	.not_mouse
+	; A relative mouse packet: its header's bits 0-1 are the mouse
+	; buttons, and in TOS's mouse mode the joystick port's fire button
+	; comes as one of them. Either one goes to scancode bit 0 (no key
+	; has scancode 0).
+	and.b	#$03, d1
+	sne	d1
+	and.b	#$01, d1
+	move.b	V_KEYS(a0), d2
+	and.b	#$fe, d2
+	or.b	d1, d2
+	cmp.b	V_KEYS(a0), d2
+	beq	.next
+	move.b	d2, V_KEYS(a0)
+	st	V_CHANGED(a0)
+	bra	.next
+.not_mouse:
 	cmp.b	#$fe-$f6, d0
 	blo	.next
 	add.b	#14-($fe-$f6), d0	; $FE -> key byte 14, $FF -> 15

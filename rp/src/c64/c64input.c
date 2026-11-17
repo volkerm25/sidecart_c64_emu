@@ -211,8 +211,11 @@ static void applyState(const uint8_t *keys) {
   if (helpDown && !helpWasDown) c64input_restorePressed = true;
   helpWasDown = helpDown;
 
-  // ST joystick port -> C64 port 2, or port 1 if swapped.
-  uint16_t joyPort = joyBits(keys[15]);
+  // ST joystick port -> C64 port 2, or port 1 if swapped. Its fire button
+  // comes as a mouse button (scancode bit 0, see c64input.h).
+  uint8_t joyByte = keys[15];
+  if (keys[0] & 0x01u) joyByte |= 0x80u;
+  uint16_t joyPort = joyBits(joyByte);
   c64input_pad = swapPorts ? (uint16_t)(joyPort << 8) : joyPort;
 }
 

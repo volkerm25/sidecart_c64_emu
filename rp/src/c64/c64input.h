@@ -11,6 +11,9 @@
  *
  *   byte 15  joystick 1 (the joystick port) as the IKBD reports it:
  *            bit 0 up, 1 down, 2 left, 3 right, 7 fire
+ *   byte 0   bit 0 (scancode 0, no key): a mouse button is down. In TOS's
+ *            mouse mode, which the ST keeps, the joystick port's fire
+ *            button arrives as a mouse button, so this is fire too.
  *   byte 14  bits 3-6 joystick 0 (the mouse port) up/down/left/right,
  *            bit 7 its fire button (bits 0-2 are the keypad's 0 . Enter);
  *            not mapped to the C64 (see c64input.c)
