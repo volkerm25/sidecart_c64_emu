@@ -1,6 +1,6 @@
 # C64-Emulator auf dem SidecarTridge Multi-device – Architektur, Risiken, Plan
 
-Stand: 2026-11-17 · Status: Entwurf v0.9 (Phase 4 läuft: D64-LOAD funktioniert, M4 offen)
+Stand: 2026-11-17 · Status: Entwurf v1.0 (M4 erreicht: Spiel aus D64 läuft stabil)
 
 ## 1. Ziel und Rahmenbedingungen
 
@@ -247,7 +247,7 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 - Host-Tests für den D64-Parser mit einer Sammlung echter Images.
 - **M4:** Spiel aus einem D64 per Menü starten und spielen (ohne Ton).
 
-**Stand 2026-11-17 (Phase 4 unterbrochen):**
+**M4 ✅ (Hexenküche läuft stabil und flüssig).** Stand:
 - Umgesetzt (D1 ohne Auto-Start und Disk-Wechsel am ST):
   - `rp/src/c64/c64drive.c` und der LOAD-Trap in `rp/src/c64/c64machine.cpp`, das MCUMEs `patches.cpp` ersetzt.
   - Trap am LOAD-Vektor `$FFD5`. Bei Gerät 8 mit gemountetem D64 übergibt core1 den Auftrag an core0 und wartet. core0 liest in der Hauptschleife von SD und schreibt direkt ins C64-RAM. So greift nur core0 auf FatFs zu.
@@ -257,11 +257,16 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
   - RP-Menü: `D` listet die D64 in `/c64`, `D <n>` mountet. Die Seite `C` zeigt das gemountete Image.
 - Bestätigt: Hexenküche (`/c64/Hexenkueche_(HTW).d64`) lädt, startet und zeigt das Titelbild mit Animation.
 - **Feuerknopf des Joysticks: gelöst** (afe7d85). Im TOS-Mausmodus kommt das Feuer des Joystickports als Maustaste im Kopf der Mauspakete. Der Handler legt diese Bits auf Scancode-Bit 0, der RP wertet sie als Feuer. Im ersten Test löste nur die Maustaste Feuer aus. Nach einem Neustart des SidecarTridge funktionierte auch der Joystick-Knopf (2026-11-17). Nebeneffekt: Ein Mausklick feuert ebenfalls.
-- **Offen: Hexenküche stürzt nach einiger Zeit ab** (reproduzierbar).
-  - Beobachtet: Der ST reagiert danach noch auf F10. Die ST-Anzeigeschleife und ihr ACIA-Handler laufen also weiter, das Problem liegt beim C64 oder beim RP.
-  - Noch zu klären: Läuft der RP weiter? Dazu im Menü (SELECT, ST-Reset) die Seite `C` aufrufen und prüfen, ob der Frame-Zähler steigt und was der C64-Bildschirmspeicher zeigt. Kommt der ST nach SELECT nicht ins Menü, hängt der RP.
-  - Kandidaten: Lädt das Spiel nach (zweiter LOAD, eigener Lader, R7)? Genauigkeit von pico64? Die Abwesenheit von SID (Spiel wartet auf SID-Register oder Paddles)?
-  - Debug-Ausgabe über UART fehlt bisher (kein Probe angeschlossen).
+- **Absturz von Hexenküche: gelöst.** Zwei Fehler in pico64. Der Build kompiliert korrigierte Kopien von `cpu.cpp` und `vic.cpp`, erzeugt von `rp/src/c64/patch_mcume.cmake`. Das Submodule bleibt unverändert, und fehlt eine Fundstelle, bricht der Build ab.
+  1. Die undokumentierten Opcodes AHX (`$93`, `$9F`), TAS (`$9B`) und SHY (`$9C`) endeten in `while(1)`: core1 hing für immer. SHX (`$9E`) schrieb nichts, und drei der Opcodes hatten das falsche Indexregister. Jetzt verhalten sie sich wie der stabile Pfad des 6510 (2b0f38e). Danach lief das Spiel deutlich länger.
+  2. VIC `$D019` Bit 7: Quittieren löschte es auch bei weiter anstehendem, freigegebenem Flag, und `$D01A` berechnete es nie neu. Das Spiel nutzt Raster- und Sprite-Kollisions-IRQs (Maske `$07`). Quittierte es eine Kollision bei anstehendem Raster-IRQ, gingen dieser und alle folgenden verloren. Das Spiel wartete endlos, und weil sein Raster-IRQ den Zeichensatz umschaltet, erschienen Buchstaben statt Spielgrafik. Jetzt gilt Bit 7 = (Flags & Maske) ≠ 0 (cbe0f0d).
+  - Gefunden mit der Diagnose-Einblendung, Taste `(` auf dem Ziffernblock (63bf17e, 6037cb2). Sie zeigt drei Zeilen über dem Bild: Bildzähler und 6510-Register, Bytes am PC, teuerstes Bild und LOAD-Zähler, IRQ-Zustand. core0 zeichnet sie und zeigt sie deshalb auch, wenn core1 steht. Die Menüseite `C` taugt dafür nicht, denn der Weg dorthin (SELECT) startet den RP neu.
+- **Offen: gelegentliches kurzes Aufblitzen von Grafikteilen an falscher Stelle.** Mögliche Ursachen:
+  - die zeilenbasierte Emulation (R6)
+  - Sprite-Multiplexing mit um eine Zeile verschobenem Raster-IRQ
+  - eine Zeile, die sich ändert, während der ST sie kopiert (wird einen Durchlauf später korrigiert)
+  - Zur Unterscheidung: Auf dem PC mit dem Host-Build vergleichen oder auf dem ST bei 25 fps (volle Kopie) beobachten.
+- Noch offen aus D1: Disk-Auswahl am ST (F10-Menü statt RP-Menü), Auto-Start, Disk-Wechsel ohne Reset. Außerdem ROMs von SD (R9, vor einer Veröffentlichung nötig).
 
 ### Phase 5 – Ton
 - SID-Registerfile, SID→YM auf core1, YM-Ausgabe im ST-VBL. Feintuning des ADSR-Modells.
