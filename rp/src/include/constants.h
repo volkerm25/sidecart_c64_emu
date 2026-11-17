@@ -62,10 +62,16 @@
 
 // Frequency constants.
 #define SAMPLE_DIV_FREQ (1.f)         // Sample frequency division factor.
+// Both can be overridden at build time (RP_CLOCK_KHZ / RP_VOLTAGE in the
+// environment of build.sh, see rp/src/CMakeLists.txt).
+#ifndef RP2040_CLOCK_FREQ_KHZ
 #define RP2040_CLOCK_FREQ_KHZ 225000  // Clock frequency in KHz (225MHz).
+#endif
 
 // Voltage constants.
+#ifndef RP2040_VOLTAGE
 #define RP2040_VOLTAGE VREG_VOLTAGE_1_10  // Voltage in 1.10 Volts.
+#endif
 #define VOLTAGE_VALUES                                                 \
   (const char *[]){"NOT VALID", "NOT VALID", "NOT VALID", "NOT VALID", \
                    "NOT VALID", "NOT VALID", "0.85v",     "0.90v",     \

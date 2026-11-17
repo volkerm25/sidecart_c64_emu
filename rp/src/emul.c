@@ -24,6 +24,7 @@
 #include "gconfig.h"
 #include "memfunc.h"
 #include "network.h"
+#include "hardware/clocks.h"
 #include "pico/stdlib.h"
 #include "reset.h"
 #include "romemul.h"
@@ -149,10 +150,13 @@ static void __not_in_flash_func(emul_pollTick)(void) {
 static bool resetDeviceAtBoot = true;
 
 static void showTitle() {
-  term_printString(
-      "\x1B"
-      "E"
-      "Microfirmware test app - " RELEASE_VERSION "\n");
+  // The running clock and voltage, so it is obvious which build is on the
+  // device while the clock is being qualified.
+  char title[TERM_SCREEN_SIZE_X + 8];
+  snprintf(title, sizeof(title), "\x1B" "E" "C64 test - %s - %lu MHz %s\n",
+           RELEASE_VERSION, (unsigned long)(clock_get_hz(clk_sys) / 1000000),
+           VOLTAGE_VALUES[RP2040_VOLTAGE]);
+  term_printString(title);
 }
 
 // What the ST told this RP at its boot: its hello, then its machine (the _MCH

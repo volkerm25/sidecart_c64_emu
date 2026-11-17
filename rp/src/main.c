@@ -34,13 +34,15 @@
 // should be modified when adding new features to the application.
 
 int main() {
+  // Set the voltage first, then the clock: a higher clock may need the higher
+  // voltage, so it must be in place (and settled) before the PLL is raised.
+  // Be cautious with this. It's possible to make the hardware unstable.
+  vreg_set_voltage(RP2040_VOLTAGE);
+  sleep_ms(10);
+
   // Set the clock frequency. Keep in mind that if you are managing remote
   // commands you should overclock the CPU to >=225MHz
   set_sys_clock_khz(RP2040_CLOCK_FREQ_KHZ, true);
-
-  // Set the voltage. Be cautios with this. I don't think it's possible to
-  // damage the hardware, but it's possible to make the hardware unstable.
-  vreg_set_voltage(RP2040_VOLTAGE);
 
   // A note about outputting debug information through the UART. It's not
   // recommended to output debug information through the UART in a production

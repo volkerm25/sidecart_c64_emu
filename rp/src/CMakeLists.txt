@@ -111,6 +111,17 @@ add_subdirectory(u8g2)
 add_subdirectory(${FATFS_SDK_PATH}/src build)
   
 # Tell CMake where to find the executable source file
+# System clock and core voltage, overridable from the environment of
+# build.sh: RP_CLOCK_KHZ=250000 RP_VOLTAGE=VREG_VOLTAGE_1_15 ./build.sh ...
+if(DEFINED ENV{RP_CLOCK_KHZ} AND NOT "$ENV{RP_CLOCK_KHZ}" STREQUAL "")
+    add_compile_definitions(RP2040_CLOCK_FREQ_KHZ=$ENV{RP_CLOCK_KHZ})
+    message(STATUS "System clock override: $ENV{RP_CLOCK_KHZ} kHz")
+endif()
+if(DEFINED ENV{RP_VOLTAGE} AND NOT "$ENV{RP_VOLTAGE}" STREQUAL "")
+    add_compile_definitions(RP2040_VOLTAGE=$ENV{RP_VOLTAGE})
+    message(STATUS "Core voltage override: $ENV{RP_VOLTAGE}")
+endif()
+
 add_executable(${PROJECT_NAME} 
         main.c
 )

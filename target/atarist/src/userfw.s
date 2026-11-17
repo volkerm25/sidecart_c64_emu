@@ -19,8 +19,15 @@
 ;   C  movem.l, 40 bytes    RAM       -> screen (reference without the
 ;                                                cartridge in the path)
 ;
-; After A and B the screen is compared with the cartridge, long by long, to
-; catch unreliable reads. Interrupts stay enabled (VBL, 200 Hz timer), which
+; The ST builds the expected image itself in RAM (same formula as the RP).
+; After A and B the screen is compared with it, long by long, to catch
+; unreliable reads; run C copies from that RAM image.
+;
+; Endurance mode (key D on the results screen), used to qualify the RP's
+; system clock: compare the cartridge with the expected image over and over,
+; and on every pass send CMD_SET_SHARED_VAR through the ROM3 command channel
+; and read the value back from the shared variables. Counts passes, bad longs,
+; failed commands and wrong read-backs until a key is pressed. Interrupts stay enabled (VBL, 200 Hz timer), which
 ; costs a percent or two and is included in the figures.
 ;
 ; Results per run, from the tick count t of BENCH_REPS = 50 copies
@@ -39,12 +46,25 @@ BENCH_IMAGE_SIZE	equ 32000
 BENCH_REPS		equ 50
 BENCH_LINES		equ 200
 BENCH_LINE_BYTES	equ 160
-PALETTE_SAVE		equ BENCH_IMAGE_SIZE	; offset of the saved palette in the RAM buffer
+; RAM buffer (Malloc): expected image, saved palette, endurance counters
+PALETTE_SAVE		equ BENCH_IMAGE_SIZE		; 16 words
+CNT_PASSES		equ PALETTE_SAVE+32
+CNT_BADLONGS		equ CNT_PASSES+4
+CNT_BADPASSES		equ CNT_BADLONGS+4
+CNT_CMDFAIL		equ CNT_BADPASSES+4
+CNT_CMDBAD		equ CNT_CMDFAIL+4
+CNT_START		equ CNT_CMDBAD+4
+RAM_BUFFER_SIZE		equ CNT_START+4
+; Shared variable the endurance test writes through the command channel
+; (the last of the 60 slots; the framework uses the first ones).
+BENCH_SHVAR_INDEX	equ 59
+BENCH_SHVAR_ADDR	equ SHARED_VARIABLES+(BENCH_SHVAR_INDEX*4)
 
 XB_Physbase		equ 2
 XB_Getrez		equ 4
 XB_Setpalette		equ 6
 XB_Vsync		equ 37
+B_Bconstat		equ 1
 KEY_ESC			equ 27
 
 	section text
@@ -65,8 +85,8 @@ userfw:
 	addq.l	#2, sp
 	move.l	d0, a5			; a5 = screen base (kept throughout)
 
-	; RAM buffer: the reference copy plus room to save the palette.
-	move.l	#BENCH_IMAGE_SIZE+32, -(sp)
+	; RAM buffer: expected image, saved palette, endurance counters.
+	move.l	#RAM_BUFFER_SIZE, -(sp)
 	move.w	#Malloc, -(sp)
 	trap	#1
 	addq.l	#6, sp
@@ -77,6 +97,7 @@ userfw:
 	rts
 .mem_ok:
 	move.l	d0, a4			; a4 = RAM buffer (kept throughout)
+	bsr	gen_pattern		; expected image at a4
 
 	; Save the palette (Setcolor with -1 reads an entry).
 	lea	PALETTE_SAVE(a4), a3
@@ -106,7 +127,7 @@ userfw:
 	move.l	#BENCH_IMAGE_ADDR, a3
 	bsr	measure
 	move.l	d0, -(sp)		; ticks A
-	move.l	#BENCH_IMAGE_ADDR, a0
+	move.l	a4, a0
 	move.l	a5, a1
 	bsr	verify
 	move.l	d0, -(sp)		; errors A
@@ -116,15 +137,12 @@ userfw:
 	move.l	#BENCH_IMAGE_ADDR, a3
 	bsr	measure
 	move.l	d0, -(sp)		; ticks B
-	move.l	#BENCH_IMAGE_ADDR, a0
+	move.l	a4, a0
 	move.l	a5, a1
 	bsr	verify
 	move.l	d0, -(sp)		; errors B
 
-	; C: movem.l, RAM -> screen (fill the RAM buffer from the cartridge first)
-	move.l	#BENCH_IMAGE_ADDR, a0
-	move.l	a4, a1
-	bsr	copy_movem
+	; C: movem.l, RAM (the expected image) -> screen
 	lea	copy_movem(pc), a2
 	move.l	a4, a3
 	bsr	measure
@@ -157,7 +175,13 @@ userfw:
 	print	msg_again(pc)
 	bsr	wait_key
 	cmp.b	#KEY_ESC, d0
+	beq.s	.leave
+	and.b	#$df, d0		; upper case
+	cmp.b	#'D', d0
 	bne	.run
+	bsr	endurance
+	bra	.run
+.leave:
 
 	; Back to TOS: free the buffer, clear the screen.
 	move.l	a4, -(sp)
@@ -228,6 +252,129 @@ verify:
 	addq.l	#1, d0
 .same:
 	dbf	d1, .cmp
+	rts
+
+; Build the expected image at a4: colour = (group + line / 8) & 15, the
+; same formula as bench_fillTestImage() on the RP.
+gen_pattern:
+	move.l	a4, a0
+	moveq	#0, d7			; line
+.line:
+	moveq	#0, d6			; group of 16 pixels
+.group:
+	move.w	d7, d0
+	lsr.w	#3, d0
+	add.w	d6, d0
+	and.w	#15, d0			; colour
+	moveq	#3, d5			; bitplanes 0..3
+.plane:
+	lsr.w	#1, d0
+	scs	d1
+	ext.w	d1			; $FFFF if the bit is set, else 0
+	move.w	d1, (a0)+
+	dbf	d5, .plane
+	addq.w	#1, d6
+	cmp.w	#20, d6
+	bne.s	.group
+	addq.w	#1, d7
+	cmp.w	#BENCH_LINES, d7
+	bne.s	.line
+	rts
+
+; Endurance test: until a key is pressed, compare the cartridge with the
+; expected image and do one command round trip per pass.
+endurance:
+	moveq	#0, d0
+	move.l	d0, CNT_PASSES(a4)
+	move.l	d0, CNT_BADLONGS(a4)
+	move.l	d0, CNT_BADPASSES(a4)
+	move.l	d0, CNT_CMDFAIL(a4)
+	move.l	d0, CNT_CMDBAD(a4)
+	move.l	hz200.w, CNT_START(a4)
+	print	msg_endurance(pc)
+.pass:
+	move.l	#BENCH_IMAGE_ADDR, a0
+	move.l	a4, a1
+	bsr	verify			; d0 = bad longs
+	tst.l	d0
+	beq.s	.read_ok
+	add.l	d0, CNT_BADLONGS(a4)
+	addq.l	#1, CNT_BADPASSES(a4)
+.read_ok:
+	addq.l	#1, CNT_PASSES(a4)
+	; Command channel: set a shared variable, read it back.
+	moveq	#BENCH_SHVAR_INDEX, d3
+	move.l	CNT_PASSES(a4), d4
+	send_sync CMD_SET_SHARED_VAR, 8
+	tst.w	d0
+	beq.s	.cmd_ok
+	addq.l	#1, CNT_CMDFAIL(a4)
+	bra.s	.cmd_done
+.cmd_ok:
+	cmp.l	BENCH_SHVAR_ADDR, d4	; send_sync keeps d4
+	beq.s	.cmd_done
+	addq.l	#1, CNT_CMDBAD(a4)
+.cmd_done:
+	move.l	CNT_PASSES(a4), d0
+	and.w	#15, d0
+	bne.s	.pass
+	bsr	show_status
+	move.w	#2, -(sp)		; console
+	move.w	#B_Bconstat, -(sp)
+	trap	#13
+	addq.l	#4, sp
+	tst.w	d0
+	beq.s	.pass
+	bsr	wait_key		; take the key
+	bsr	show_status
+	print	msg_endurance_done(pc)
+	bsr	wait_key
+	rts
+
+; Show the endurance counters (fixed screen positions).
+show_status:
+	print	msg_st_pass(pc)
+	move.l	CNT_PASSES(a4), d0
+	bsr	print_dec
+	print	msg_st_read(pc)
+	move.l	CNT_BADLONGS(a4), d0
+	bsr	print_dec
+	print	msg_st_in(pc)
+	move.l	CNT_BADPASSES(a4), d0
+	bsr	print_dec
+	print	msg_st_cmd(pc)
+	move.l	CNT_CMDFAIL(a4), d0
+	bsr	print_dec
+	print	msg_st_cmdbad(pc)
+	move.l	CNT_CMDBAD(a4), d0
+	bsr	print_dec
+	print	msg_st_time(pc)
+	move.l	hz200.w, d0
+	sub.l	CNT_START(a4), d0
+	divu	#200, d0		; seconds (< 65536)
+	and.l	#$ffff, d0
+	divu	#60, d0			; d0 = seconds : minutes
+	move.l	d0, -(sp)
+	and.l	#$ffff, d0
+	bsr	print_dec		; minutes
+	move.w	#':', -(sp)
+	move.w	#Cconout, -(sp)
+	trap	#1
+	addq.l	#4, sp
+	move.l	(sp)+, d0
+	swap	d0
+	and.l	#$ffff, d0		; seconds
+	cmp.w	#10, d0
+	bcc.s	.two_digits
+	move.l	d0, -(sp)
+	move.w	#'0', -(sp)
+	move.w	#Cconout, -(sp)
+	trap	#1
+	addq.l	#4, sp
+	move.l	(sp)+, d0
+.two_digits:
+	bsr	print_dec
+	print	msg_eol(pc)
 	rts
 
 ; Print the figures of one run. d0 = ticks, d1 = errors (-1: not verified).
@@ -358,7 +505,28 @@ msg_err:
 msg_crlf:
 	dc.b	13,10,0
 msg_again:
-	dc.b	13,10,"Taste: nochmal, Esc: Desktop",13,10,0
+	dc.b	13,10,"Taste: nochmal, D: Dauertest",13,10
+	dc.b	"Esc: Desktop",13,10,0
+msg_endurance:
+	dc.b	27,"E","Dauertest Cartridge (ROM4 + ROM3)",13,10
+	dc.b	"Vergleich mit Sollbild + Kommando",13,10
+	dc.b	"je Durchlauf. Taste beendet.",13,10,0
+msg_endurance_done:
+	dc.b	27,"Y",32+11,32+0,"Beendet. Taste druecken.",13,10,0
+msg_st_pass:
+	dc.b	27,"Y",32+4,32+0,"Durchlaeufe:  ",0
+msg_st_read:
+	dc.b	27,"Y",32+5,32+0,"Lesefehler:   ",0
+msg_st_in:
+	dc.b	" Long in ",0
+msg_st_cmd:
+	dc.b	" Durchl.",27,"K",27,"Y",32+6,32+0,"Kmd-Fehler:   ",0
+msg_st_cmdbad:
+	dc.b	27,"K",27,"Y",32+7,32+0,"Wert falsch:  ",0
+msg_st_time:
+	dc.b	27,"K",27,"Y",32+8,32+0,"Laufzeit:     ",0
+msg_eol:
+	dc.b	27,"K",0
 msg_cls:
 	dc.b	27,"E",0
 	even
