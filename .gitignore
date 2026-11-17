@@ -58,13 +58,13 @@ upload_s3.sh
 build/
 dist/
 .cache/
-.claude/
+.claude/*
+!.claude/agents/
 .DS_Store
 
-# Local planning notes, kept on the developer's machine only. Nothing that is
-# committed may reference a path under docs/ or name an item from it: inline
-# the information instead.
-docs/
+# Local planning notes (the template's backlog folder), kept on the developer's
+# machine only. Design documents directly under docs/ are tracked.
+docs/epics/
 
 # Host-side developer tools: capture and build output
 tools/dev/logs/

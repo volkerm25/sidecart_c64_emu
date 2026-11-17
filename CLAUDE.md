@@ -4,6 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 See also: `programming.md` (full shared-region table and budget rules), `README.md` (high-level region/userfw overview), `AGENTS.md` (host setup, copy-pasteable commands, and a symptom → fix table).
 
+## This project: C64 emulator (sidecart_c64_emu)
+
+This repository started from `md-microfirmware-template` (remote `template`, merge upstream updates from `template/main`). It turns the template into a **Commodore 64 emulator**: the C64 core (MCUME `pico64`, git submodule `third_party/MCUME`, never edited in place) runs on the RP2040; the Atari ST (plain ST, no STE features) only displays the picture, plays the sound through the YM2149 (SID registers translated to YM registers) and supplies joystick and keyboard. D64 images are served through a KERNAL-level virtual drive 8.
+
+- Architecture, risks and the phase plan: `docs/ARCHITEKTUR.md` (German). Unlike the template's local backlog (`docs/epics/`, gitignored), design documents directly under `docs/` are tracked and may be referenced.
+- Project agents in `.claude/agents/`: `mcume-expert` (C64 core, porting, performance), `sidecartridge-md-expert` (this template, protocol, PIO/DMA), `atari-st-expert` (68000, ST hardware).
+- Local toolchain on the main dev machine: `PICO_TOOLCHAIN_PATH=$HOME/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin`, `stcmd` in `~/.local/bin`. Dev build: `./build.sh pico_w debug 44444444-4444-4444-8444-444444444444`.
+- The rest of this file is the template's guidance and still applies.
+
 ## What this repo is
 
 Template for a **Sidecartridge Multi-device microfirmware app** targeting Atari ST / STE / MegaST(E). Each "app" is a UF2 image that runs on a Raspberry Pi Pico (RP2040) plugged into the Multi-device cartridge slot, emulating a ROM cartridge for the Atari while also handling networking, SD card I/O, and config. Public build/usage docs are at <https://docs.sidecartridge.com/sidecartridge-multidevice/programming/>.
