@@ -61,6 +61,14 @@ void c64host_setPaused(bool paused);
 // types LOAD"*",8,1 at the BASIC prompt and RUN once that has loaded.
 void c64host_requestReset(bool autostartAfter);
 
+// Core 0: make C64DRIVE_FOLDER/name (a CRT file) the cartridge and reset the
+// C64. Stops core 1 for a few seconds while the ROM goes to flash. Returns
+// NULL, or why it failed; the C64 is reset without a cartridge then.
+const char *c64host_insertCartridge(const char *name);
+
+// Core 0: remove the cartridge and reset the C64.
+void c64host_removeCartridge(void);
+
 // Core 0: pause the C64, write its state (registers, VIC, CIAs, RAM,
 // colour RAM; layout in c64host.cpp) to path on the SD card, let it run on.
 bool c64host_writeDump(const char *path);

@@ -40,8 +40,8 @@ void c64drive_init(uint8_t *c64Ram);
 bool c64drive_findImage(int index, char *name, int nameSize);
 
 // Core 0: in one pass over C64DRIVE_FOLDER, copy the names of disk images
-// start .. start + max - 1 into names (max entries of nameSize bytes).
-// Returns the number of disk images in the folder (0 without an SD card).
+// and cartridges (.crt) start .. start + max - 1 into names (max entries of
+// nameSize bytes). Returns how many the folder holds (0 without an SD card).
 int c64drive_listImages(int start, char *names, int nameSize, int max);
 
 // Core 0: mount C64DRIVE_FOLDER/name. False if it cannot be opened or its

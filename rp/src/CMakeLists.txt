@@ -194,12 +194,13 @@ set_source_files_properties(${C64_CORE_SOURCES} ${C64_HOST_SOURCES} PROPERTIES
 set_source_files_properties(${C64_CORE_SOURCES}
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64roms.cpp PROPERTIES COMPILE_OPTIONS "-w")
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/c64)
-# The ST screen converter, the input mapping, the drive, the SID and the
-# disk menu need only the template's headers.
+# The ST screen converter, the input mapping, the drive, the cartridge
+# port, the SID and the disk menu need only the template's headers.
 target_sources(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64video.c
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64input.c
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64drive.c
+    ${CMAKE_CURRENT_LIST_DIR}/c64/c64cart.c
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64sid.c
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64menu.c)
 # The emulator runs without Wi-Fi (see lwipopts.h and emul.c).

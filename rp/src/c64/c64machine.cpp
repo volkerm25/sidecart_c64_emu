@@ -15,6 +15,7 @@
 #include "pico/stdlib.h"
 
 extern "C" {
+#include "c64cart.h"
 #include "c64drive.h"
 #include "c64host.h"
 #include "c64input.h"
@@ -52,6 +53,7 @@ static void oneRasterLine(void) {
 void c64_Init(void) {
   disableEventResponder();
   resetPLA();
+  c64cart_reset();  // before the CPU reads its reset vector
   resetCia1();
   resetCia2();
   resetVic();

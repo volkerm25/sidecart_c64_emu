@@ -15,6 +15,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 #include "ff.h"
 #include "hardware/sync.h"
@@ -74,6 +75,12 @@ static bool hasImageExtension(const char *name) {
   return (ext[2] == '6' && ext[3] == '4') || (ext[2] == '8' && ext[3] == '1');
 }
 
+// .crt, any case.
+static bool hasCartridgeExtension(const char *name) {
+  size_t len = strlen(name);
+  return len >= 4 && strcasecmp(name + len - 4, ".crt") == 0;
+}
+
 bool c64drive_findImage(int index, char *name, int nameSize) {
   DIR dir;
   FILINFO info;
@@ -101,7 +108,8 @@ int c64drive_listImages(int start, char *names, int nameSize, int max) {
   int index = 0;
   while (f_readdir(&dir, &info) == FR_OK && info.fname[0] != '\0') {
     if ((info.fattrib & (AM_DIR | AM_HID | AM_SYS)) ||
-        !hasImageExtension(info.fname)) {
+        (!hasImageExtension(info.fname) &&
+         !hasCartridgeExtension(info.fname))) {
       continue;
     }
     if (index >= start && index < start + max) {

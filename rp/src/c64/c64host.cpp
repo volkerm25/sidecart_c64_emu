@@ -14,11 +14,13 @@
 #include <string.h>
 
 #include "ff.h"
+#include "hardware/irq.h"
 #include "hardware/timer.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
 
 extern "C" {
+#include "c64cart.h"
 #include "c64drive.h"
 #include "c64input.h"
 #include "c64sid.h"
@@ -288,6 +290,34 @@ extern "C" bool c64host_writeDump(const char *path) {
   }
   c64host_setPaused(false);
   return ok;
+}
+
+// Core 1 executes the core from flash, which writing the cartridge to flash
+// takes away: stop core 1 between two raster lines, hold it in reset, and
+// start it afresh, which resets the C64. Its RAM serves as the buffer.
+extern "C" const char *c64host_insertCartridge(const char *name) {
+  c64host_setPaused(true);
+  while (multicore_fifo_rvalid()) {
+    tight_loop_contents();  // the converter takes the lines core 1 posted
+  }
+  irq_set_enabled(SIO_IRQ_PROC0, false);
+  multicore_reset_core1();
+  hostRunning = false;
+  pauseRequested = false;
+  pausedNow = false;
+  resetRequested = RESET_NONE;
+  const char *error = c64cart_insert(name, cpu.RAM, sizeof(cpu.RAM));
+  c64sid_init();
+  multicore_launch_core1(core1Main);
+  c64video_startConverter();
+  return error;
+}
+
+// The cartridge's lines stay until the reset; until then its bank registers
+// do nothing.
+extern "C" void c64host_removeCartridge(void) {
+  c64cart_remove();
+  resetRequested = RESET_PLAIN;
 }
 
 extern "C" void c64host_requestReset(bool autostartAfter) {

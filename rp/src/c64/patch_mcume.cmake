@@ -37,6 +37,17 @@
 # pla.cpp: SID accesses. Without reSID (HAS_SND unset) writes went nowhere
 # and reads returned 0; they now go to c64/c64sid.c, which turns the SID
 # into YM2149 registers.
+# Also in pla.cpp: cartridges (c64/c64cart.c). pico64 had the ROM windows as
+# 1-byte placeholders, and a write to the 6510 port ($01) always picked the
+# maps without a cartridge, so a cartridge vanished at the first bank
+# switch. pla_setCartridgeLines now builds the set of maps for the GAME and
+# EXROM lines, which the port selects from. pico64's cartridge tables are
+# wrong for some port values (BASIC or I/O where the C64 has RAM); the set
+# takes their right rows and pico64's own maps for the others, as the C64's
+# PLA does. In Ultimax mode writes use the map with I/O for every port
+# value. ROML and ROMH read through c64cart's bank pointers, and I/O 1
+# ($DE00) and I/O 2 ($DF00) tell c64cart about accesses (bank registers);
+# what is read there and that writes land in RAM is unchanged.
 
 file(READ "${MCUME_SOURCE}" source)
 get_filename_component(name "${MCUME_SOURCE}" NAME)
@@ -125,6 +136,42 @@ mcume_replace(
 mcume_replace(
     "void w_sid( uint32_t address, uint8_t value )\t{ }"
     "extern \"C\" void c64sid_write(uint8_t reg, uint8_t value);\nvoid w_sid( uint32_t address, uint8_t value )\t{ c64sid_write(address & 0x1F, value); }")
+
+# Cartridge ROM through c64cart's bank pointers.
+mcume_replace(
+    "#include \"pla.h\"\n"
+    "#include \"pla.h\"\n#include \"c64cart.h\"\n")
+mcume_replace(
+    "{ return cpu.cartrigeLO[address & 0x1fff]; }"
+    "{ return c64cart_roml[address & 0x1fff]; }")
+mcume_replace(
+    "{ return cpu.cartrigeHI[address & 0x1fff]; }"
+    "{ return c64cart_romh[address & 0x1fff]; }")
+
+# I/O 1 and I/O 2: reads and writes as before, and c64cart sees them.
+mcume_replace(
+    "void w_cia2( uint32_t address, uint8_t value )\t{ cia2_write(address, value); }\n"
+    "void w_cia2( uint32_t address, uint8_t value )\t{ cia2_write(address, value); }\nuint8_t r_io1(uint32_t address)\t{ c64cart_io1Read(address); return cpu.RAM[address]; }\nvoid w_io1( uint32_t address, uint8_t value )\t{ cpu.RAM[address] = value; c64cart_io1Write(address, value); }\nvoid w_io2( uint32_t address, uint8_t value )\t{ cpu.RAM[address] = value; c64cart_io2Write(address, value); }\n")
+mcume_replace(
+    "r_cia1, r_cia2, r_ram,  r_ram,"
+    "r_cia1, r_cia2, r_io1,  r_ram,")
+mcume_replace(
+    "w_cia1, w_cia2, w_ram,  w_ram,"
+    "w_cia1, w_cia2, w_io1,  w_io2,")
+
+# The 6510 port selects from the maps for the current cartridge lines.
+mcume_replace(
+    "void w_ramz( uint32_t address, uint8_t value )\t{ \n"
+    "// The maps for each value of the 6510 port, for the current GAME and EXROM\n// lines: set by pla_setCartridgeLines, which resetPLA calls. Not\n// initialised, to keep them out of .data.\nstatic const rarray_t *plaReadMaps[8];\nstatic const warray_t *plaWriteMaps[8];\n\nvoid w_ramz( uint32_t address, uint8_t value )\t{ \n")
+mcume_replace(
+    "\t\tcpu.plamap_r = (rarray_t*)&PLA_READ[value];\n\t\tcpu.plamap_w = (warray_t*)&PLA_WRITE[value];\n"
+    "\t\tcpu.plamap_r = (rarray_t*)plaReadMaps[value];\n\t\tcpu.plamap_w = (warray_t*)plaWriteMaps[value];\n")
+mcume_replace(
+    "void resetPLA(void) {"
+    "// GAME and EXROM: 1 inactive, 0 active (pulled low by the cartridge).\n// 8 KB (EXROM): ROML at $8000 with LORAM and HIRAM set. 16 KB (both): ROMH\n// at $A000 with HIRAM, ROML at $8000 with LORAM and HIRAM, all RAM for port\n// values 0, 1 and 4. Ultimax (GAME): ROML, I/O, ROMH, whatever the port.\nextern \"C\" void pla_setCartridgeLines(int game, int exrom) {\n\tcpu._game = game ? 1 : 0;\n\tcpu._exrom = exrom ? 1 : 0;\n\tbool ultimax = cpu._exrom && !cpu._game;\n\tfor (int port = 0; port < 8; port++) {\n\t\tconst rarray_t *map = &PLA_READ[port];\n\t\tif (ultimax) {\n\t\t\tmap = &PLA_READ_CARTRIGE_01[port];\n\t\t} else if (!cpu._exrom && cpu._game) {\n\t\t\tif ((port & 3) == 3) map = &PLA_READ_CARTRIGE_10[port];\n\t\t} else if (!cpu._exrom) {\n\t\t\tif (port & 2) map = &PLA_READ_CARTRIGE_00[port];\n\t\t\telse if (port == 1) map = &PLA_READ[0];\n\t\t}\n\t\tplaReadMaps[port] = map;\n\t\tplaWriteMaps[port] = ultimax ? &PLA_WRITE[7] : &PLA_WRITE[port];\n\t}\n\tuint8_t port = cpu.RAM[1] & 0x07;\n\tcpu.plamap_r = (rarray_t*)plaReadMaps[port];\n\tcpu.plamap_w = (warray_t*)plaWriteMaps[port];\n}\n\nvoid resetPLA(void) {")
+mcume_replace(
+    "#if 1 //No Cartrige\n    cpu._game = 1;\n\tcpu._exrom = 1;\n#else //TODO...\n    cpu._game = 0;\n\tcpu._exrom = 0;\t\n#endif\t\n"
+    "\tpla_setCartridgeLines(1, 1); // none: c64cart_reset attaches one\n")
 
 else()
     message(FATAL_ERROR "patch_mcume: no fixes for ${name}")

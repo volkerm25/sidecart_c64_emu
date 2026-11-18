@@ -23,7 +23,10 @@
 
 MEMORY
 {
-    FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 1024k  /* The first 1024kb available */
+    FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 508k  /* App code */
+    /* C64 cartridge ROM (c64/c64cart.c): a 4 KB descriptor sector, then
+       512 KB of ROM banks starting on a 64 KB erase block. */
+    C64CART_FLASH(r) : ORIGIN = 0x1007F000, LENGTH = 516k
     ROM_TEMP(rw) : ORIGIN = 0x10100000, LENGTH = 128k /* Store the 128KB ROM loaded here */
 
 /* This is the default flash space for the app if you don't need room to store data */
@@ -38,6 +41,9 @@ MEMORY
     GLOBAL_CONFIG_FLASH(r): ORIGIN = 0x101FF000, LENGTH = 4K /* At the top 4KB of the Flash we have the global lookup information */
     /* The booster code must be allocated from 0x10120000 to 0x101DFFFF */
 }
+
+__c64cart_flash_start = ORIGIN(C64CART_FLASH);
+__c64cart_flash_end = ORIGIN(C64CART_FLASH) + LENGTH(C64CART_FLASH);
 
 ENTRY(_entry_point)
 

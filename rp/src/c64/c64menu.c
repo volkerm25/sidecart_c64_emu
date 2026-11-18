@@ -9,7 +9,9 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
+#include "c64cart.h"
 #include "c64drive.h"
 #include "c64host.h"
 #include "c64input.h"
@@ -25,6 +27,7 @@ static_assert(C64MENU_END_OFFSET <= CHANDLER_FRAMEBUFFER_OFFSET,
 
 // ST scancodes the menu uses.
 #define SC_ESC 0x01
+#define SC_E 0x12
 #define SC_Q 0x10
 #define SC_R 0x13
 #define SC_RETURN 0x1C
@@ -67,9 +70,11 @@ static void render(void) {
   memset(text, 0, sizeof(text));
   const char *disk = c64drive_mountedName();
   snprintf(text[0], COLS + 1, "C64 disk menu");
+  const char *cartridge = c64cart_insertedName();
   snprintf(text[1], COLS + 1, "Drive 8: %.31s", disk ? disk : "empty");
+  snprintf(text[2], COLS + 1, "Cartridge: %.29s", cartridge ? cartridge : "none");
   if (imageCount == 0) {
-    snprintf(text[LIST_FIRST_ROW], COLS + 1, " No disk images in " C64DRIVE_FOLDER);
+    snprintf(text[LIST_FIRST_ROW], COLS + 1, " No disks or cartridges in " C64DRIVE_FOLDER);
   }
   for (int i = 0; i < LIST_ROWS && pageStart + i < imageCount; i++) {
     snprintf(text[LIST_FIRST_ROW + i], COLS + 1, " %.38s", names[i]);
@@ -80,7 +85,7 @@ static void render(void) {
   }
   snprintf(text[22], COLS + 1, "%s", message);
   snprintf(text[23], COLS + 1, "RETURN insert  SPACE insert+run  R reset");
-  snprintf(text[24], COLS + 1, "Q quit to desktop      F10/Esc back");
+  snprintf(text[24], COLS + 1, "E eject cartridge  Q quit  F10/Esc back");
   for (int i = 0; i < ROWS; i++) rows[i] = text[i];
   int invertRow = (imageCount > 0) ? LIST_FIRST_ROW + (selected - pageStart) : -1;
   c64video_setText(rows, ROWS, invertRow);
@@ -139,6 +144,30 @@ static bool insertSelected(void) {
   return true;
 }
 
+static bool selectedIsCartridge(void) {
+  if (imageCount == 0) return false;
+  const char *name = names[selected - pageStart];
+  size_t len = strlen(name);
+  return len >= 4 && strcasecmp(name + len - 4, ".crt") == 0;
+}
+
+// A cartridge goes in with a reset, whichever key chose it. Writing it to
+// flash stops the C64 for a few seconds; a failure leaves it reset without
+// a cartridge, held while the menu stays open.
+static bool insertCartridge(void) {
+  const char *name = names[selected - pageStart];
+  snprintf(message, sizeof(message), "Writing cartridge to flash...");
+  render();
+  const char *error = c64host_insertCartridge(name);
+  if (error != NULL) {
+    c64host_setPaused(true);
+    c64sid_silence();
+    snprintf(message, sizeof(message), "%.40s", error);
+    return false;
+  }
+  return true;
+}
+
 static void handleKey(const C64InputKey *key) {
   switch (key->scancode) {
     case SC_UP:
@@ -155,18 +184,25 @@ static void handleKey(const C64InputKey *key) {
       break;
     case SC_RETURN:
     case SC_ENTER:
-      if (insertSelected()) {
-        closeMenu();
-        return;
-      }
-      break;
     case SC_SPACE:
+      if (selectedIsCartridge()) {
+        if (insertCartridge()) {
+          closeMenu();
+          return;
+        }
+        break;
+      }
       if (insertSelected()) {
-        c64host_requestReset(true);
+        if (key->scancode == SC_SPACE) c64host_requestReset(true);
         closeMenu();
         return;
       }
       break;
+    case SC_E:
+      if (c64cart_insertedName() == NULL) return;
+      c64host_removeCartridge();
+      closeMenu();
+      return;
     case SC_R:
       c64host_requestReset(false);
       closeMenu();

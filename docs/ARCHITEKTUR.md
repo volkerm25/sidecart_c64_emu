@@ -302,17 +302,20 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 - Partitionen werden nicht betreten.
 - Bestätigt: Anzeige im Menü, Verzeichnis, LOAD.
 
-**TODO: CRT-Module (Steckmodule), vorgemerkt 2026-11-17:**
-- Stand in pico64:
-  - Vorhanden sind die PLA-Tabellen für 8K, 16K und Ultimax (GAME/EXROM).
-  - Es fehlen der Modulspeicher (`cpu.cartrigeLO/HI` sind 1-Byte-Platzhalter, „TODO“) und die Bankumschaltung über `$DE00`/`$DF00`. Beides ist per Patch-Skript nachrüstbar.
-- Stufe 1: CRT-Typ 0 (8K/16K normal, Ultimax) aus dem RAM. Knapp, aber machbar.
-- Stufe 2: bankumschaltende Spielmodule bis ~512 KB.
-  - Typen: Ocean (5), System 3 / C64 Games System (15), Magic Desk/Domark (19), Dinamic (17), Fun Play (7), Super Games (8).
-  - Beim Einstecken von SD in einen reservierten Flash-Bereich kopieren, core1 dabei anhalten (Reset ohnehin).
-  - Risiko: XIP-Cache-Konkurrenz mit dem Emulatorcode, Geschwindigkeit messen.
-- Nicht geplant: EasyFlash (beschreibbar), Freezer (Action Replay, Final Cartridge).
-- Bedienung: CRT-Dateien im F10-Menü neben den Disks. Einstecken mit Reset, Menüpunkt zum Abziehen.
+**CRT-Module (Steckmodule), bestätigt 2026-11-18:** einfache Module und größere bis ~80 KB laufen; EasyFlash wird wie vorgesehen mit „CRT type 32 not supported“ abgewiesen.
+- `rp/src/c64/c64cart.c`. CRT-Dateien stehen im F10-Menü neben den Disks. RETURN oder Leertaste stecken ein und setzen zurück, E zieht ab (mit Reset). Zeile 2 des Menüs zeigt das Modul.
+- Typen: 0 (8K, 16K, Ultimax), Ocean (5), Fun Play (7), Super Games (8), C64 Game System / System 3 (15), Dinamic (17), Magic Desk (19). Bis 512 KB.
+- Speicher: eigener Flash-Bereich `C64CART_FLASH` (0x1007F000, 4 KB Deskriptor + 512 KB ROM); `FLASH` für den Code auf 508 KB verkleinert (belegt ~380 KB).
+  - Beim Einstecken hält core0 core1 im Reset (er führt den Kern aus dem Flash aus), schreibt das ROM und startet core1 neu. Als Puffer dient das C64-RAM.
+  - Gleiche Datei (Name, Größe, Datum) wird nicht neu geschrieben. Der Deskriptor wird zuletzt geschrieben.
+  - Der C64 liest das ROM direkt aus dem Flash (XIP). Geschwindigkeit noch messen.
+- Kern-Patches (`pla.cpp`):
+  - `w_ramz` wählte immer die Tabellen ohne Modul; jetzt Kartensatz je GAME/EXROM.
+  - pico64s Modultabellen sind für die Port-Werte 1, 4 und 5 falsch und werden dort durch die richtigen Tabellen ersetzt.
+  - I/O 1/2 melden Zugriffe an `c64cart` (Bankregister).
+- Nicht unterstützt: Ultimax-Grafik (der VIC sieht das Modul-ROM nicht), EasyFlash (32), Freezer.
+- Host-Test des CRT-Parsers mit synthetischen Dateien aller Typen: Bänke, Spiegelung, Abschalten, Sperrbit bestanden.
+- Vorsicht RAM: `.data` endet 72 Bytes unter 0x20004000. Darüber rückt `.bss` wegen des 16-KB-ausgerichteten `commRing` um 16 KB nach oben, und der Link scheitert mit „region RAM overflowed“. Neue Variablen deshalb nicht initialisieren.
 
 ## 6. Offene Punkte
 
