@@ -39,10 +39,15 @@ void c64drive_init(uint8_t *c64Ram);
 // order) into name. False when there is no such file or no SD card.
 bool c64drive_findImage(int index, char *name, int nameSize);
 
-// Core 0: in one pass over C64DRIVE_FOLDER, copy the names of disk images
-// and cartridges (.crt) start .. start + max - 1 into names (max entries of
-// nameSize bytes). Returns how many the folder holds (0 without an SD card).
+// Core 0: the disk images and cartridges (.crt) in C64DRIVE_FOLDER, sorted
+// by name with case ignored (in directory order if the heap cannot hold the
+// names for sorting). Copies the names of entries start .. start + max - 1
+// into names (max entries of nameSize bytes). Returns how many the folder
+// holds (0 without an SD card).
 int c64drive_listImages(int start, char *names, int nameSize, int max);
+
+// Core 0: the position of name in c64drive_listImages's order, or -1.
+int c64drive_listIndex(const char *name);
 
 // Core 0: mount C64DRIVE_FOLDER/name. False if it cannot be opened or its
 // size is not a D64's or a D81's.

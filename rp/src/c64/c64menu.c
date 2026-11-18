@@ -97,23 +97,10 @@ static void openMenu(void) {
   c64input_setMenuMode(true);
   message[0] = '\0';
   // Start on the mounted image, if it is in the folder.
-  selected = 0;
-  loadPage(0);
   const char *disk = c64drive_mountedName();
-  for (int start = 0; disk != NULL && start < imageCount;
-       start += LIST_ROWS) {
-    if (start != pageStart) loadPage(start);
-    for (int i = 0; i < LIST_ROWS && start + i < imageCount; i++) {
-      if (strcmp(names[i], disk) == 0) {
-        selected = start + i;
-        disk = NULL;  // found
-        break;
-      }
-    }
-  }
-  if (selected / LIST_ROWS * LIST_ROWS != pageStart) {
-    loadPage(selected / LIST_ROWS * LIST_ROWS);
-  }
+  int index = (disk != NULL) ? c64drive_listIndex(disk) : -1;
+  selected = (index > 0) ? index : 0;
+  loadPage(selected / LIST_ROWS * LIST_ROWS);
   menuOpen = true;
   render();
 }

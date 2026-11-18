@@ -14,6 +14,7 @@
 #include "c64drive.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
@@ -101,25 +102,99 @@ bool c64drive_findImage(int index, char *name, int nameSize) {
   return found;
 }
 
-int c64drive_listImages(int start, char *names, int nameSize, int max) {
+// A file the menu lists: a disk image or a cartridge.
+static bool isListed(const FILINFO *info) {
+  return !(info->fattrib & (AM_DIR | AM_HID | AM_SYS)) &&
+         (hasImageExtension(info->fname) || hasCartridgeExtension(info->fname));
+}
+
+static int compareNames(const void *a, const void *b) {
+  const char *left = *(const char *const *)a;
+  const char *right = *(const char *const *)b;
+  int order = strcasecmp(left, right);
+  return order ? order : strcmp(left, right);
+}
+
+typedef void (*ListVisit)(int index, const char *name, void *context);
+
+// Call visit for each listed file in the menu's order: sorted by name, case
+// ignored. The names are read into one heap block (pointers, then the
+// names) for the sort and freed again; without the memory for it, the
+// order is the directory's. Returns how many files are listed.
+static int forEachListed(ListVisit visit, void *context) {
   DIR dir;
   FILINFO info;
   if (f_opendir(&dir, C64DRIVE_FOLDER) != FR_OK) return 0;
-  int index = 0;
+  int count = 0;
+  size_t textSize = 0;
   while (f_readdir(&dir, &info) == FR_OK && info.fname[0] != '\0') {
-    if ((info.fattrib & (AM_DIR | AM_HID | AM_SYS)) ||
-        (!hasImageExtension(info.fname) &&
-         !hasCartridgeExtension(info.fname))) {
+    if (!isListed(&info)) continue;
+    count++;
+    textSize += strlen(info.fname) + 1;
+  }
+  char **names =
+      count ? malloc((size_t)count * sizeof(char *) + textSize) : NULL;
+  f_rewinddir(&dir);
+  int listed = 0;
+  char *text = names ? (char *)(names + count) : NULL;
+  char *textEnd = names ? text + textSize : NULL;
+  while (f_readdir(&dir, &info) == FR_OK && info.fname[0] != '\0') {
+    if (!isListed(&info)) continue;
+    if (names == NULL) {
+      visit(listed++, info.fname, context);
       continue;
     }
-    if (index >= start && index < start + max) {
-      snprintf(names + (index - start) * nameSize, (size_t)nameSize, "%s",
-               info.fname);
-    }
-    index++;
+    size_t size = strlen(info.fname) + 1;
+    if (listed == count || text + size > textEnd) break;  // folder changed
+    memcpy(text, info.fname, size);
+    names[listed++] = text;
+    text += size;
   }
   f_closedir(&dir);
-  return index;
+  if (names != NULL) {
+    qsort(names, (size_t)listed, sizeof(char *), compareNames);
+    for (int i = 0; i < listed; i++) visit(i, names[i], context);
+    free(names);
+  }
+  return listed;
+}
+
+typedef struct {
+  int start;
+  int max;
+  char *names;
+  int nameSize;
+} PageCopy;
+
+static void copyToPage(int index, const char *name, void *context) {
+  PageCopy *page = context;
+  if (index >= page->start && index < page->start + page->max) {
+    snprintf(page->names + (index - page->start) * page->nameSize,
+             (size_t)page->nameSize, "%s", name);
+  }
+}
+
+int c64drive_listImages(int start, char *names, int nameSize, int max) {
+  PageCopy page = {start, max, names, nameSize};
+  return forEachListed(copyToPage, &page);
+}
+
+typedef struct {
+  const char *name;
+  int index;
+} ListSearch;
+
+static void findInList(int index, const char *name, void *context) {
+  ListSearch *search = context;
+  if (search->index < 0 && strcmp(name, search->name) == 0) {
+    search->index = index;
+  }
+}
+
+int c64drive_listIndex(const char *name) {
+  ListSearch search = {name, -1};
+  forEachListed(findInList, &search);
+  return search.index;
 }
 
 bool c64drive_mount(const char *name) {
