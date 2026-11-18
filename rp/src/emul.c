@@ -17,6 +17,7 @@
 #include "c64host.h"
 #include "c64input.h"
 #include "c64menu.h"
+#include "c64roms.h"
 #include "c64video.h"
 #include "chandler.h"
 #include "commemul.h"
@@ -282,6 +283,9 @@ static void atariLine(char *line, size_t size) {
 }
 static char atariLineShown[TERM_SCREEN_SIZE_X] = {0};
 
+// Whether the C64 runs: false without usable ROMs (c64roms_status says why).
+static bool c64Running = false;
+
 static void menu(void) {
   menuScreenActive = true;
   showTitle();
@@ -292,6 +296,9 @@ static void menu(void) {
   atariLine(atariLineShown, sizeof(atariLineShown));
   term_printString(atariLineShown);
   term_printString("\n");
+  char romLine[TERM_SCREEN_SIZE_X + 2];
+  snprintf(romLine, sizeof(romLine), "C64 ROMs  : %s\n", c64roms_status());
+  term_printString(romLine);
 
   // Display network information
   term_printNetworkInfo();
@@ -422,6 +429,12 @@ void cmdFirmware(const char *arg) {
     // The user firmware relies on what the ST publishes at boot (the machine
     // type, for a Mega STE's cache), and this RP has not heard it yet.
     term_printString("\nReset the Atari ST first.\n");
+    return;
+  }
+  if (!c64Running) {
+    term_printString("\nNo C64 ROMs. Copy basic.bin, kernal.bin\n"
+                     "and chargen.bin to " C64ROMS_FOLDER "\n"
+                     "and press SELECT to restart.\n");
     return;
   }
   menuScreenActive = false;
@@ -780,6 +793,10 @@ void emul_start() {
     }
   }
 
+  // Start the C64 core on core 1, if the SD card or the flash has its ROMs.
+  // Before the menu, which shows what the ROM loader found.
+  c64Running = c64host_start();
+
   // 7. Now complete the terminal emulator initialization
   // The terminal emulator is used to interact with the user to configure the
   // device.
@@ -798,8 +815,6 @@ void emul_start() {
   // Debug builds only: serve the SWD mailbox of tools/dev/swd.py
   devhooks_setAppHandler(emul_devhooksApp);
 
-  // Start the C64 core on core 1 (speed test: unthrottled, no output).
-  c64host_start();
   c64menu_init();
 
   DPRINTF("Start the app loop here\n");

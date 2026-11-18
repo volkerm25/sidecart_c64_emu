@@ -23,6 +23,7 @@ extern "C" {
 #include "c64cart.h"
 #include "c64drive.h"
 #include "c64input.h"
+#include "c64roms.h"
 #include "c64sid.h"
 #include "c64video.h"
 #include "emuapi.h"
@@ -30,10 +31,6 @@ extern "C" {
 
 #include "Teensy64.h"
 #include "c64.h"
-
-#if defined(C64_ROMS_IN_RAM) && (C64_ROMS_IN_RAM != 0)
-extern void c64roms_copyToRam(void);
-#endif
 
 // Written by core 1 only, read by core 0.
 static volatile bool hostRunning = false;
@@ -324,7 +321,9 @@ extern "C" void c64host_requestReset(bool autostartAfter) {
   resetRequested = autostartAfter ? RESET_AUTOSTART : RESET_PLAIN;
 }
 
-extern "C" void c64host_start(void) {
+extern "C" bool c64host_start(void) {
+  // Core 1 is not running yet: its RAM is free to read the ROMs through.
+  if (!c64roms_load(cpu.RAM, sizeof(cpu.RAM))) return false;
 #if defined(C64_ROMS_IN_RAM) && (C64_ROMS_IN_RAM != 0)
   c64roms_copyToRam();
 #endif
@@ -333,6 +332,7 @@ extern "C" void c64host_start(void) {
   c64drive_init(cpu.RAM);
   multicore_launch_core1(core1Main);
   c64video_startConverter();
+  return true;
 }
 
 extern "C" void c64host_stop(void) {

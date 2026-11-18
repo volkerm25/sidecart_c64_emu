@@ -210,7 +210,7 @@ sidecart_c64_emu/
 | **R6** | Zeilenbasiertes Timing → Rastereffekte und manche Spiele falsch | sicher | mittel | Akzeptiert. Ziel: die meisten Spiele, keine Demos |
 | **R7** | **D64 ohne echte 1541:** Fastloader, Drive-Code und Kopierschutz laufen nicht | sicher | mittel–hoch | KERNAL-Laufwerk D1–D3. Kompatibilitätsliste führen. „Fixed“/gecrackte Versionen empfehlen |
 | **R8** | Trap-Kollisionen: Programme mit eigenem KERNAL-Ersatz/Patches oder KERNAL ausgeblendet ($01) | mittel | niedrig | Traps nur aktiv, wenn der KERNAL eingeblendet ist. Sonst normales (scheiterndes) IEC-Verhalten = „Device not present“ |
-| **R9** | Commodore-ROMs nicht verteilbar | hoch | mittel | ROMs von SD (Nutzer stellt sie bereit). Kompatibilität freier ROMs (MEGA65 OpenROMs) mit den Trap-Adressen prüfen |
+| **R9** | Commodore-ROMs nicht verteilbar | hoch | mittel | Erledigt 2026-11-18: ROMs von SD (`/c64/roms`), ins Flash kopiert; MCUMEs `roms.cpp` wird nicht mehr gelinkt (siehe Phase 6). Freie ROMs (MEGA65 OpenROMs) als Rückfall nicht umgesetzt |
 | **R10** | Pacing C64 50,12 Hz vs. ST 50 Hz (PAL) / 60 Hz (NTSC) → Doppel- oder Ausfall-Frames | mittel | niedrig | RP pacet selbst, der ST holt immer den neuesten Frame |
 | **R11** | SID→YM klingt zu schwach | mittel | niedrig | Früh mit typischen Tunes testen. ADSR-Modell und Update-Rate nachbessern |
 | **R12** | Debugging schwer, Hatari kennt das MD nicht | hoch | mittel | Host-Build (Emulator, C2P, D64, SID→YM komplett am PC testbar). UART/picoprobe |
@@ -275,7 +275,7 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
   - Sprite-Multiplexing mit um eine Zeile verschobenem Raster-IRQ
   - eine Zeile, die sich ändert, während der ST sie kopiert (wird einen Durchlauf später korrigiert)
   - Zur Unterscheidung: Auf dem PC mit dem Host-Build vergleichen oder auf dem ST bei 25 fps (volle Kopie) beobachten.
-- Disk-Auswahl am ST, Auto-Start und Disk-Wechsel ohne Reset: in Phase 6 erledigt (Disk-Menü). Noch offen: ROMs von SD (R9, vor einer Veröffentlichung nötig).
+- Disk-Auswahl am ST, Auto-Start und Disk-Wechsel ohne Reset: in Phase 6 erledigt (Disk-Menü). ROMs von SD: erledigt 2026-11-18 (R9).
 
 ### Phase 5 – Ton
 - SID-Registerfile, SID→YM auf core1, YM-Ausgabe im ST-VBL. Feintuning des ADSR-Modells.
@@ -316,6 +316,14 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 - Nicht unterstützt: Ultimax-Grafik (der VIC sieht das Modul-ROM nicht), EasyFlash (32), Freezer.
 - Host-Test des CRT-Parsers mit synthetischen Dateien aller Typen: Bänke, Spiegelung, Abschalten, Sperrbit bestanden.
 - Vorsicht RAM: `.data` endet 72 Bytes unter 0x20004000. Darüber rückt `.bss` wegen des 16-KB-ausgerichteten `commRing` um 16 KB nach oben, und der Link scheitert mit „region RAM overflowed“. Neue Variablen deshalb nicht initialisieren.
+
+**ROMs von der SD-Karte, bestätigt 2026-11-18:**
+- `rp/src/c64/c64roms.c`. Dateien in `/c64/roms`: `basic.bin`, `kernal.bin`, `chargen.bin`. Die VICE-Namen und die Namen mit Teilenummer werden auch erkannt.
+- Eigener Flash-Bereich `C64ROMS_FLASH` (0x10079000, 20 KB ROMs + 4 KB Deskriptor); `FLASH` auf 484 KB verkleinert. Der Linker legt `rom_basic`, `rom_kernal` und `rom_characters` dorthin (`PROVIDE`, damit `C64_ROMS_IN_RAM` sie überschreiben kann).
+- Beim Start vor core1: Vergleich mit dem Flash, Schreiben nur bei Unterschied, Puffer ist das C64-RAM. Ohne Dateien auf der Karte gilt die Kopie im Flash.
+- Die Trap-Opcodes für LOAD/SAVE (`$D2`/`$F2` statt `JMP` bei `$FFD5`/`$FFD8`) setzt der Lader. Ein KERNAL ohne die beiden `JMP` wird abgewiesen.
+- Ohne ROMs startet der C64 nicht. Das Setup-Menü zeigt „C64 ROMs : …“, und `[F]irmware` wird mit einem Hinweis verweigert.
+- Das UF2 enthält keine Commodore-Daten mehr (geprüft: BASIC-Texte und Zeichensatz-Stücke nicht im Binary).
 
 ## 6. Offene Punkte
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Before you update
+
+- **The C64 ROMs come from the SD card.** Commodore's ROMs are no longer
+  part of the firmware. Copy `basic.bin` (8 KB), `kernal.bin` (8 KB) and
+  `chargen.bin` (4 KB) to `/c64/roms` (VICE's file names work too) and
+  restart. At the first start they are copied to flash; after that the
+  C64 runs without them on the card. Without ROMs the setup menu says
+  what is missing and the C64 does not start. Tested with KERNAL
+  revision 3 (901227-03).
+
 ## v0.1.0 (2026-11-18) - release
 
 The first release of the C64 emulator. The RP2040 runs a Commodore 64

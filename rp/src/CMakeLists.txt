@@ -185,28 +185,29 @@ set(C64_CORE_SOURCES
     ${MCUME_PATCHED_DIR}/vic.cpp)
 set(C64_HOST_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64host.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/c64/c64machine.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/c64/c64roms.cpp)
+    ${CMAKE_CURRENT_LIST_DIR}/c64/c64machine.cpp)
 target_sources(${PROJECT_NAME} PRIVATE ${C64_CORE_SOURCES} ${C64_HOST_SOURCES})
 set_source_files_properties(${C64_CORE_SOURCES} ${C64_HOST_SOURCES} PROPERTIES
     INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/c64;${MCUME_PICO64_DIR}")
 # Third-party code: its warnings are not ours to fix.
-set_source_files_properties(${C64_CORE_SOURCES}
-    ${CMAKE_CURRENT_LIST_DIR}/c64/c64roms.cpp PROPERTIES COMPILE_OPTIONS "-w")
+set_source_files_properties(${C64_CORE_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/c64)
 # The ST screen converter, the input mapping, the drive, the cartridge
-# port, the SID and the disk menu need only the template's headers.
+# port, the ROM loader, the SID and the disk menu need only the template's
+# headers. MCUME's roms.cpp (Commodore's ROMs) is not built: the ROMs come
+# from the SD card (c64/c64roms.c).
 target_sources(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64video.c
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64input.c
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64drive.c
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64cart.c
+    ${CMAKE_CURRENT_LIST_DIR}/c64/c64roms.c
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64sid.c
     ${CMAKE_CURRENT_LIST_DIR}/c64/c64menu.c)
 # The emulator runs without Wi-Fi (see lwipopts.h and emul.c).
 add_compile_definitions(C64_NO_WIFI=1)
 # C64_ROMS_IN_RAM=1 in the environment of build.sh serves the C64 ROMs from
-# RAM instead of flash: BASIC and KERNAL, 16 KB (see c64/c64roms.cpp).
+# RAM instead of flash: BASIC and KERNAL, 16 KB (see c64/c64roms.c).
 if(DEFINED ENV{C64_ROMS_IN_RAM} AND "$ENV{C64_ROMS_IN_RAM}" STREQUAL "1")
     add_compile_definitions(C64_ROMS_IN_RAM=1)
     message(STATUS "C64 ROMs in RAM")

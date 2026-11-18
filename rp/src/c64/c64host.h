@@ -44,8 +44,10 @@ typedef struct {
   uint16_t rasterLine, rasterIrqLine;
 } C64HostStats;
 
-// Reset the C64 and start emulating it on core 1. Call once.
-void c64host_start(void);
+// Bring the C64 ROMs from the SD card (c64roms), reset the C64 and start
+// emulating it on core 1. Call once. False, with nothing started, when
+// there are no usable ROMs (c64roms_status says why).
+bool c64host_start(void);
 
 // Hold core 1 in reset. Call before anything that writes the flash or leaves
 // this app: core 1 executes the core from flash (XIP), which a flash write

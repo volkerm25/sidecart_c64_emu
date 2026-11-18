@@ -23,7 +23,10 @@
 
 MEMORY
 {
-    FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 508k  /* App code */
+    FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 484k  /* App code */
+    /* C64 ROMs (c64/c64roms.c), copied from the SD card: BASIC, KERNAL,
+       character generator (20 KB), then a 4 KB descriptor sector. */
+    C64ROMS_FLASH(r) : ORIGIN = 0x10079000, LENGTH = 24k
     /* C64 cartridge ROM (c64/c64cart.c): a 4 KB descriptor sector, then
        512 KB of ROM banks starting on a 64 KB erase block. */
     C64CART_FLASH(r) : ORIGIN = 0x1007F000, LENGTH = 516k
@@ -42,6 +45,12 @@ MEMORY
     /* The booster code must be allocated from 0x10120000 to 0x101DFFFF */
 }
 
+__c64roms_flash_start = ORIGIN(C64ROMS_FLASH);
+/* The names the C64 core reads the ROMs by. C64_ROMS_IN_RAM defines
+   rom_basic and rom_kernal in RAM instead, which overrides these. */
+PROVIDE(rom_basic = ORIGIN(C64ROMS_FLASH));
+PROVIDE(rom_kernal = ORIGIN(C64ROMS_FLASH) + 0x2000);
+PROVIDE(rom_characters = ORIGIN(C64ROMS_FLASH) + 0x4000);
 __c64cart_flash_start = ORIGIN(C64CART_FLASH);
 __c64cart_flash_end = ORIGIN(C64CART_FLASH) + LENGTH(C64CART_FLASH);
 
