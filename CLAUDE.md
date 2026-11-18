@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-See also: `programming.md` (full shared-region table and budget rules), `README.md` (high-level region/userfw overview), `AGENTS.md` (host setup, copy-pasteable commands, and a symptom → fix table).
+See also: `programming.md` (full shared-region table and budget rules), `README.md` (the user guide: installation, SD card layout, keys, limits), `AGENTS.md` (host setup, copy-pasteable commands, and a symptom → fix table).
 
 ## This project: C64 emulator (sidecart_c64_emu)
 
