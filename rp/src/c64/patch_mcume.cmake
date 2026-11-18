@@ -11,6 +11,14 @@
 # ($9E) stored nothing, and $9F, $9E and $9C used the wrong index register.
 # They now behave as on a 6510's stable path: the stored value is ANDed with
 # the high byte of the base address plus one.
+# Also in cpu.cpp: the 6510's read-modify-write instructions (INC, DEC, ASL,
+# LSR, ROL, ROR, and the undocumented ones built on them) write the unchanged
+# value before the result. Programs rely on that to acknowledge VIC
+# interrupts with INC $D019 (the first write, of the value read, clears the
+# flags that were set); pico64 wrote only the result, the raster IRQ stayed
+# pending and fired again at once, and the main program never ran on (Great
+# Giana Sisters). The extra write is made for I/O addresses ($D000-$DFFF)
+# only, where it has an effect.
 #
 # vic.cpp: the VIC's IRQ bit ($D019 bit 7). Acknowledging any flag cleared
 # it even with another enabled flag still set, and changing the mask
@@ -63,6 +71,26 @@ mcume_replace(
 mcume_replace(
     "\tabsy();\n\t//shy();\n\tUNSUPPORTED;"
     "\tabsx();\n\tputvalue(cpu.y & (uint8_t)(((cpu.ea - cpu.x) >> 8) + 1));")
+
+# Read-modify-write: the unchanged value first, for I/O.
+mcume_replace(
+    "INLINEOP void inc() {\n\tuint32_t result = getvalue() + 1;\n"
+    "INLINEOP void inc() {\n\tuint32_t original = getvalue();\n\tif ((cpu.ea & 0xF000) == 0xD000) putvalue(original); // 6510 RMW: writes the unchanged value first\n\tuint32_t result = original + 1;\n")
+mcume_replace(
+    "INLINEOP void dec() {\n\tuint32_t result = getvalue() - 1;\n"
+    "INLINEOP void dec() {\n\tuint32_t original = getvalue();\n\tif ((cpu.ea & 0xF000) == 0xD000) putvalue(original); // 6510 RMW: writes the unchanged value first\n\tuint32_t result = original - 1;\n")
+mcume_replace(
+    "INLINEOP void asl() {\n\tuint32_t result = getvalue();\n"
+    "INLINEOP void asl() {\n\tuint32_t result = getvalue();\n\tif ((cpu.ea & 0xF000) == 0xD000) putvalue(result); // 6510 RMW: writes the unchanged value first\n")
+mcume_replace(
+    "\tuint32_t value = getvalue();\n\tuint32_t result = value >> 1;\n"
+    "\tuint32_t value = getvalue();\n\tif ((cpu.ea & 0xF000) == 0xD000) putvalue(value); // 6510 RMW: writes the unchanged value first\n\tuint32_t result = value >> 1;\n")
+mcume_replace(
+    "\tuint16_t value = getvalue();\n\tuint16_t result = (value << 1) | (cpu.cpustatus & FLAG_CARRY);\n"
+    "\tuint16_t value = getvalue();\n\tif ((cpu.ea & 0xF000) == 0xD000) putvalue(value); // 6510 RMW: writes the unchanged value first\n\tuint16_t result = (value << 1) | (cpu.cpustatus & FLAG_CARRY);\n")
+mcume_replace(
+    "\tuint32_t value = getvalue();\n\tuint16_t result = (value >> 1) | ((cpu.cpustatus & FLAG_CARRY) << 7);\n"
+    "\tuint32_t value = getvalue();\n\tif ((cpu.ea & 0xF000) == 0xD000) putvalue(value); // 6510 RMW: writes the unchanged value first\n\tuint16_t result = (value >> 1) | ((cpu.cpustatus & FLAG_CARRY) << 7);\n")
 
 # $9E SHX abs,Y (was abs,X, and stored nothing): X & (H + 1).
 mcume_replace(
