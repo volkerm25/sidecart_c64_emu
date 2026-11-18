@@ -338,3 +338,4 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 | `mcume-expert` | pico64-Kern, Portierung, Performance, VIC/SID, KERNAL-Traps |
 | `sidecartridge-md-expert` | Template, PIO/DMA, Protokoll, Shared Memory, Build/Deploy |
 | `atari-st-expert` | 68000-Assembler, IKBD, YM2149, Video, Timing |
+| `static-analysis-expert` | Statische Analyse und Optimierung des C/C++-Codes: Nebenläufigkeit, UB, RAM/Flash, heiße Pfade |

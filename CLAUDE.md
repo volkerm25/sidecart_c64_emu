@@ -9,7 +9,7 @@ See also: `programming.md` (full shared-region table and budget rules), `README.
 This repository started from `md-microfirmware-template` (remote `template`, merge upstream updates from `template/main`). It turns the template into a **Commodore 64 emulator**: the C64 core (MCUME `pico64`, git submodule `third_party/MCUME`, never edited in place) runs on the RP2040; the Atari ST (plain ST, no STE features) only displays the picture, plays the sound through the YM2149 (SID registers translated to YM registers) and supplies joystick and keyboard. D64 images are served through a KERNAL-level virtual drive 8.
 
 - Architecture, risks and the phase plan: `docs/ARCHITEKTUR.md` (German). Unlike the template's local backlog (`docs/epics/`, gitignored), design documents directly under `docs/` are tracked and may be referenced.
-- Project agents in `.claude/agents/`: `mcume-expert` (C64 core, porting, performance), `sidecartridge-md-expert` (this template, protocol, PIO/DMA), `atari-st-expert` (68000, ST hardware).
+- Project agents in `.claude/agents/`: `mcume-expert` (C64 core, porting, performance), `sidecartridge-md-expert` (this template, protocol, PIO/DMA), `atari-st-expert` (68000, ST hardware), `static-analysis-expert` (static analysis and optimisation of the C/C++ code).
 - Local toolchain on the main dev machine: `PICO_TOOLCHAIN_PATH=$HOME/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin`, `stcmd` in `~/.local/bin`. Dev build: `./build.sh pico_w debug 44444444-4444-4444-8444-444444444444`.
 - The rest of this file is the template's guidance and still applies.
 
