@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 (2026-11-18) - release
+
+The firmware no longer contains Commodore's ROMs: they come from the SD
+card.
 
 ### Before you update
 
