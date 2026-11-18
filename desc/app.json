@@ -1,10 +1,11 @@
 {
   "uuid": "<APP_UUID>",
-  "name": "APP DEV Template",
-  "description": "Microfirmware Application Template for Atari ST",
+  "name": "C64 Emulator",
+  "description": "Commodore 64 emulator: the RP2040 runs the C64, the Atari ST shows the picture, plays the sound on its YM2149 and supplies keyboard and joysticks. D64/D81 disks and CRT cartridges from the SD card.",
   "image": "https://placehold.co/256x256/png",
   "tags": [
-    "Sample"
+    "Emulator",
+    "C64"
   ],
   "devices": [
     "ST",

@@ -1,5 +1,57 @@
 # Changelog
 
+## v0.1.0 (2026-11-18) - release
+
+The first release of the C64 emulator. The RP2040 runs a Commodore 64
+(PAL), built on the C64 core of MCUME (pico64); the Atari ST shows its
+picture, plays its sound on the YM2149 and supplies keyboard and
+joystick. Images and cartridges come from the `/c64` folder on the SD
+card.
+
+### C64 on the ST
+
+- **Picture and sound.** The C64's display area goes to the ST screen,
+  the border colour to the ST's border. The SID's registers are turned
+  into YM2149 registers.
+- **Keyboard.** Keys map by position, letters by the labels of a German
+  ST keyboard. Esc and Undo are RUN/STOP, Help is RESTORE, Alt is C=,
+  Tab and Ctrl are CTRL, Insert is the pound sign.
+- **Joystick.** The ST's joystick port is the C64's port 2; F9 moves it
+  to port 1 and back. The mouse port is not used.
+
+### Disks and cartridges
+
+- **Drive 8** loads from D64 (35 and 40 tracks) and D81 images, with or
+  without error bytes, through the KERNAL's LOAD; there is no 1541
+  emulation, so fast loaders and SAVE do not work.
+- **CRT cartridges** up to 512 KB: normal (8 KB, 16 KB, Ultimax), Ocean,
+  Fun Play, Super Games, C64 Game System / System 3, Dinamic and Magic
+  Desk. The ROM is written to flash when a cartridge is inserted, which
+  takes a few seconds; the same file is not written again. EasyFlash
+  is not supported yet.
+- **F10 menu** over the C64 picture: the disk images and cartridges,
+  sorted by name. RETURN inserts a disk, SPACE inserts it and runs it
+  (reset, `LOAD"*",8,1`, `RUN`); a cartridge goes in with a reset either
+  way. E removes the cartridge, R resets, Q returns to the desktop.
+
+### Diagnosis
+
+- Keypad `(` shows an overlay with the C64's state; keypad `)` writes it
+  to `/c64/c64dump.bin` (registers, VIC, CIAs, RAM, colour RAM), which
+  `tools/dev/c64dump.py` decodes.
+
+### Fixes to the C64 core
+
+- The undocumented store opcodes ($93, $9B, $9C, $9E, $9F) no longer
+  hang the core, and use the right index registers.
+- Read-modify-write instructions write the unchanged value first, so
+  `INC $D019` acknowledges VIC interrupts.
+- The VIC's IRQ bit follows its flags and mask.
+- An empty serial bus reads high: LOAD from a device that is not there
+  reports DEVICE NOT PRESENT instead of hanging.
+- The memory maps follow the cartridge lines, and are right for every
+  value of the 6510 port.
+
 ## v1.3.0 (2026-09-29) - release
 
 A reliability release. The command path between the ST and the RP now

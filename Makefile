@@ -20,6 +20,15 @@ DEV_UF2 = dist/$(DEV_UUID)-$(VERSION).uf2
 # C64_ROMS_IN_RAM=1 serves BASIC and KERNAL from RAM instead of flash.
 export RP_CLOCK_KHZ RP_VOLTAGE C64_ROMS_IN_RAM
 
+## Release build of the app itself: its UUID, the clock and voltage the
+## emulator needs. Leaves dist/$(APP_UUID)-$(VERSION).uf2 and
+## dist/$(APP_UUID).json.
+APP_UUID = a801bcb1-6755-44f4-8d6d-922b7699976f
+.PHONY: release
+release:
+	RP_CLOCK_KHZ=250000 RP_VOLTAGE=VREG_VOLTAGE_1_15 \
+	PICO_TOOLCHAIN_PATH=$(PICO_TOOLCHAIN_PATH) ./build.sh pico_w release $(APP_UUID)
+
 .PHONY: build deploy upload launch
 build:
 	PICO_TOOLCHAIN_PATH=$(PICO_TOOLCHAIN_PATH) ./build.sh pico_w $(BUILD_TYPE) $(DEV_UUID)
