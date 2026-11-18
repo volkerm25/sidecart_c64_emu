@@ -313,7 +313,12 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
   - `w_ramz` wählte immer die Tabellen ohne Modul; jetzt Kartensatz je GAME/EXROM.
   - pico64s Modultabellen sind für die Port-Werte 1, 4 und 5 falsch und werden dort durch die richtigen Tabellen ersetzt.
   - I/O 1/2 melden Zugriffe an `c64cart` (Bankregister).
-- Nicht unterstützt: Ultimax-Grafik (der VIC sieht das Modul-ROM nicht), EasyFlash (32), Freezer.
+- EasyFlash (32), gebaut 2026-11-18, auf dem Gerät nur teilweise lauffähig (Branch `easyflash`, nicht in `main`):
+  - Beobachtet: Manche Module starten nicht; bei Outrun reagiert der Joystick nicht. Ursache offen.
+  - Nur lesend, bis 512 KB (32 Bänke ROML+ROMH). Leere Chips (`$FF`) oberhalb von 512 KB werden übersprungen; viele EasyFlash-CRTs sind damit auf 1 MB aufgefüllt.
+  - Start im Ultimax-Modus mit Bank 0. `$DE00` wählt die Bank, `$DE02` den Modus (Boot-Jumper gesetzt).
+  - Die 256 Byte RAM bei `$DF00` sind das C64-RAM, das pico64 dort für I/O 2 ohnehin hält. Im Ultimax-Modus lieferten Lesezugriffe auf I/O 1/2 bisher 0; jetzt liefern sie dieses RAM.
+- Nicht unterstützt: Ultimax-Grafik (der VIC sieht das Modul-ROM nicht), EasyFlash schreiben (EAPI), Freezer.
 - Host-Test des CRT-Parsers mit synthetischen Dateien aller Typen: Bänke, Spiegelung, Abschalten, Sperrbit bestanden.
 - Vorsicht RAM: `.data` endet 72 Bytes unter 0x20004000. Darüber rückt `.bss` wegen des 16-KB-ausgerichteten `commRing` um 16 KB nach oben, und der Link scheitert mit „region RAM overflowed“. Neue Variablen deshalb nicht initialisieren.
 

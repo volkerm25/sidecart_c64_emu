@@ -11,8 +11,11 @@
  * from flash; the bank registers at $DE00/$DF00 move the ROML/ROMH windows.
  *
  * Hardware types: 0 normal (8 KB, 16 KB, Ultimax), 5 Ocean, 7 Fun Play,
- * 8 Super Games, 15 C64 Game System / System 3, 17 Dinamic, 19 Magic Desk.
- * Up to 512 KB. In Ultimax mode the VIC does not see the cartridge ROM.
+ * 8 Super Games, 15 C64 Game System / System 3, 17 Dinamic, 19 Magic Desk,
+ * 32 EasyFlash (read only: its flash cannot be written). Up to 512 KB; blank
+ * chips past that are left out. In Ultimax mode the VIC does not see the
+ * cartridge ROM. EasyFlash's 256 bytes of RAM at $DF00 are the C64 RAM
+ * pico64 already keeps there for I/O 2.
  */
 
 #ifndef C64CART_H

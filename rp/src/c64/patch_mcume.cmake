@@ -70,7 +70,9 @@
 # PLA does. In Ultimax mode writes use the map with I/O for every port
 # value. ROML and ROMH read through c64cart's bank pointers, and I/O 1
 # ($DE00) and I/O 2 ($DF00) tell c64cart about accesses (bank registers);
-# what is read there and that writes land in RAM is unchanged.
+# what is read there and that writes land in RAM is unchanged. In Ultimax
+# mode they read 0; they now read that RAM too, which serves as EasyFlash's
+# RAM at $DF00 (its boot code runs in Ultimax mode).
 
 file(READ "${MCUME_SOURCE}" source)
 get_filename_component(name "${MCUME_SOURCE}" NAME)
@@ -202,6 +204,9 @@ mcume_replace(
     "void w_cia2( uint32_t address, uint8_t value )\t{ cia2_write(address, value); }\nuint8_t r_io1(uint32_t address)\t{ c64cart_io1Read(address); return cpu.RAM[address]; }\nvoid w_io1( uint32_t address, uint8_t value )\t{ cpu.RAM[address] = value; c64cart_io1Write(address, value); }\nvoid w_io2( uint32_t address, uint8_t value )\t{ cpu.RAM[address] = value; c64cart_io2Write(address, value); }\n")
 mcume_replace(
     "r_cia1, r_cia2, r_ram,  r_ram,"
+    "r_cia1, r_cia2, r_io1,  r_ram,")
+mcume_replace(
+    "r_cia1, r_cia2, r_nul/*?*/,  r_nul/*?*/,"
     "r_cia1, r_cia2, r_io1,  r_ram,")
 mcume_replace(
     "w_cia1, w_cia2, w_ram,  w_ram,"

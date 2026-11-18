@@ -50,6 +50,7 @@ enum {
   TYPE_C64GS = 15,
   TYPE_DINAMIC = 17,
   TYPE_MAGICDESK = 19,
+  TYPE_EASYFLASH = 32,
 };
 
 // Where a CRT's chips go: by load address into one 16 KB bank (normal
@@ -131,6 +132,15 @@ void c64cart_io1Read(uint32_t address) {
   }
 }
 
+// EasyFlash $DE02: bit 2 M, bit 1 X (EXROM active), bit 0 G (GAME active,
+// with M set). With M clear the boot jumper drives GAME: active, so X clear
+// is Ultimax (the mode after a reset) and X set 16 KB. Bit 7 is the LED.
+static void setEasyFlashMode(uint8_t value) {
+  bool exromActive = (value & 0x02) != 0;
+  bool gameActive = (value & 0x04) ? (value & 0x01) != 0 : true;
+  pla_setCartridgeLines(gameActive ? 0 : 1, exromActive ? 0 : 1);
+}
+
 void c64cart_io1Write(uint32_t address, uint8_t value) {
   if (!inserted) return;
   lastMode = value;
@@ -152,6 +162,13 @@ void c64cart_io1Write(uint32_t address, uint8_t value) {
     case TYPE_MAGICDESK:  // bit 7 switches the ROM off
       selectBank(value & 0x3F);
       pla_setCartridgeLines(1, (value & 0x80) ? 1 : 0);
+      break;
+    case TYPE_EASYFLASH:
+      if ((address & 0x02) == 0) {  // $DE00: bank
+        selectBank(value & 0x3F);
+      } else {  // $DE02: mode
+        setEasyFlashMode(value);
+      }
       break;
     default:
       break;
@@ -210,6 +227,13 @@ static bool setUpType(Cartridge *c, Layout *layout) {
       c->game = 1;
       c->exrom = 0;
       return true;
+    case TYPE_EASYFLASH:  // ROML and ROMH banks; starts in Ultimax mode
+      *layout = LAYOUT_16K;
+      c->stride = 2 * BANK_SIZE;
+      c->romhOffset = BANK_SIZE;
+      c->game = 0;
+      c->exrom = 1;
+      return true;
     case TYPE_SUPERGAMES:  // 16 KB at $8000
       *layout = LAYOUT_16K;
       c->stride = 2 * BANK_SIZE;
@@ -222,7 +246,8 @@ static bool setUpType(Cartridge *c, Layout *layout) {
   }
 }
 
-// Where a ROM chip goes in the data area, and the slot it fills.
+// Where a ROM chip goes in the data area, and the slot it fills. The slot
+// may lie past the data area; the caller checks.
 static bool chipSlot(Layout layout, unsigned bank, unsigned address,
                      unsigned size, uint32_t *offset, uint32_t *slot) {
   if (size < FLASH_PAGE_SIZE || size > 2 * BANK_SIZE || (size & (size - 1))) {
@@ -247,7 +272,7 @@ static bool chipSlot(Layout layout, unsigned bank, unsigned address,
       break;
   }
   *slot = (size > BANK_SIZE) ? 2 * BANK_SIZE : BANK_SIZE;
-  return *offset + *slot <= DATA_SIZE;
+  return true;
 }
 
 static uint32_t flashOffset(const uint8_t *address) {
@@ -268,9 +293,18 @@ static void flashProgram(const uint8_t *address, const uint8_t *data,
   restore_interrupts(irq);
 }
 
-// Visit the CRT's ROM chips. With program false, check them and find the
-// highest bank and the end of the data; with program true, write each to
-// flash through scratch.
+static bool isBlank(const uint8_t *data, unsigned size) {
+  for (unsigned i = 0; i < size; i++) {
+    if (data[i] != 0xFF) return false;
+  }
+  return true;
+}
+
+// Visit the CRT's ROM chips, reading each into scratch. With program false,
+// check them and find the highest bank and the end of the data; with
+// program true, write each to flash. A blank chip ($FF, as erased flash
+// reads) is not written, and past the data area it is left out: EasyFlash
+// CRTs are often padded to 1 MB with them.
 static const char *walkChips(FIL *file, FSIZE_t start, FSIZE_t fileSize,
                              Layout layout, bool program, uint8_t *scratch,
                              unsigned *maxBank, uint32_t *end) {
@@ -300,23 +334,28 @@ static const char *walkChips(FIL *file, FSIZE_t start, FSIZE_t fileSize,
       if (!chipSlot(layout, bank, address, size, &offset, &slot)) {
         return "Unsupported ROM layout or size";
       }
-      if (program) {
-        if (f_read(file, scratch, size, &got) != FR_OK || got != size) {
-          return "Cannot read the CRT file";
+      if (f_read(file, scratch, size, &got) != FR_OK || got != size) {
+        return "Cannot read the CRT file";
+      }
+      bool blank = isBlank(scratch, size);
+      if (offset + slot > DATA_SIZE) {
+        if (!blank) return "Cartridge larger than 512 KB";
+      } else if (program) {
+        if (!blank) {
+          for (uint32_t at = size; at < slot; at += size) {
+            memcpy(scratch + at, scratch, size);
+          }
+          flashProgram(DATA_START + offset, scratch, slot);
         }
-        for (uint32_t at = size; at < slot; at += size) {
-          memcpy(scratch + at, scratch, size);
-        }
-        flashProgram(DATA_START + offset, scratch, slot);
       } else {
         if (bank > *maxBank) *maxBank = bank;
         if (offset + slot > *end) *end = offset + slot;
+        chips++;
       }
-      chips++;
     }
     pos += packetSize;
   }
-  return chips ? NULL : "No ROM in the CRT file";
+  return (program || chips) ? NULL : "No ROM in the CRT file";
 }
 
 static const char *loadCartridge(FIL *file, const FILINFO *info,
@@ -350,7 +389,7 @@ static const char *loadCartridge(FIL *file, const FILINFO *info,
   unsigned maxBank = 0;
   uint32_t end = 0;
   const char *error = walkChips(file, headerSize, info->fsize, layout, false,
-                                NULL, &maxBank, &end);
+                                scratch, &maxBank, &end);
   if (error) return error;
   unsigned banks = 1;
   while (banks <= maxBank) banks <<= 1;
