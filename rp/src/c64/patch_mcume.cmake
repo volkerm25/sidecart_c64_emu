@@ -40,6 +40,15 @@
 # sprite in that mode read through it, and core 1 took a HardFault and
 # locked up (Ghostbusters II, EasyFlash). The bits are now cleared in the
 # C64 address.
+# Also in vic.cpp: sprites near the right border. The line buffer for
+# sprite pixels ends at X 344, and the VIC's character codes and colours
+# for the current text row (lineMemChr, lineMemCol) and the colour RAM
+# follow it in memory. A sprite starting left of 344 was drawn in full, so
+# one at X 321 or more wrote past the end and replaced the row's characters
+# with sprite pixels: a band of garbage characters as tall as the sprite
+# across the screen (clouds drifting right in Pole Position II's bends).
+# Drawing now stops at the end of the buffer; at most the last 3 of the
+# 320 visible pixels of a sprite at the right edge are lost.
 #
 # cia2.cpp: the serial bus lines. Off the Teensy READ_CLK_DATA() is 0, so
 # CLK and DATA always read low, as if a device held them: the KERNAL took any
@@ -145,6 +154,14 @@ mcume_replace(
 mcume_replace(
     "    case 0x1A : //IRQ Mask\n      cpu.vic.R[address] = value & 0x0f;\n      break;"
     "    case 0x1A : //IRQ Mask\n      cpu.vic.R[address] = value & 0x0f;\n      if (cpu.vic.R[0x19] & cpu.vic.R[0x1a] & 0x0f) cpu.vic.R[0x19] |= 0x80;\n      else cpu.vic.R[0x19] &= 0x7f;\n      break;")
+
+# Sprite pixels stop at the end of the line buffer.
+mcume_replace(
+    "uint16_t * slp = &cpu.vic.spriteLine[x]; //Sprite-Line-Pointer"
+    "uint16_t * slp = &cpu.vic.spriteLine[x]; //Sprite-Line-Pointer\n          uint16_t * const slpEnd = &cpu.vic.spriteLine[SPRITE_MAX_X]; // lineMemChr follows")
+mcume_replace(
+    "for (unsigned cnt = 0; (spriteData > 0) && (cnt < 24); cnt++) {"
+    "for (unsigned cnt = 0; (spriteData > 0) && (cnt < 24) && (slp + 4 <= slpEnd); cnt++) {")
 
 # ECM + BMM: address bits 9 and 10 cleared in the C64 address, not the
 # pointer.
