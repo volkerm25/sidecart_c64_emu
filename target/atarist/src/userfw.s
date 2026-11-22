@@ -22,7 +22,12 @@
 ; ST); a few changed lines leave it at 50.
 ;
 ; Keyboard and joystick: the viewer takes over the ACIA interrupt ($118)
-; with a handler that keeps one bit per scancode. The IKBD stays in TOS's
+; with a handler that keeps one bit per scancode. For its first second the
+; handler passes the interrupt on to TOS: the key that started the viewer
+; ('f', Return) is often still down, and TOS repeats a key, with a click,
+; until it sees it released. The ACIA gives each byte only once, so the
+; handler cannot read the release and hand it on too. Key click and key
+; repeat are off (conterm) while the viewer runs, for a key held longer. The IKBD stays in TOS's
 ; mode: mouse packets for the mouse port, which the handler skips, and
 ; joystick events for the joystick port. The handler is copied into the RAM
 ; block, so that its state, behind it, is reachable PC-relative. Whenever the
@@ -66,7 +71,9 @@ ST_PENDING		equ ST_BACK+2			; word: frame number read before the pass
 ST_OLD_ACIA		equ ST_PENDING+2		; long: TOS's ACIA vector
 ST_VBL_SLOT		equ ST_OLD_ACIA+4		; long: our VBL queue slot, or 0
 ST_QUIT			equ ST_VBL_SLOT+4		; word: MENU_QUIT_ADDR at the start
-ST_IRQ			equ ST_QUIT+2			; the handler's copy
+ST_START		equ ST_QUIT+2			; long: FRCLOCK at the start
+ST_CONTERM		equ ST_START+4			; byte: TOS's conterm
+ST_IRQ			equ ST_CONTERM+2		; the handler's copy
 ST_IRQ_VARS		equ ST_IRQ+(irq_vars-irq_start)
 ST_SCREEN_SPAN		equ ST_IRQ+(irq_end-irq_start)
 RAM_BUFFER_SIZE		equ ST_SCREEN_SPAN+VIDEO_SCREEN_SIZE+256
@@ -76,7 +83,11 @@ V_KEYS			equ 0				; 16 bytes, one bit per scancode
 V_CHANGED		equ 16				; byte: not 0 = state to send
 V_SKIP			equ 17				; byte: packet bytes still to come
 V_TARGET		equ 18				; byte: key byte for the joystick byte
-V_SIZE			equ 20
+V_PASS			equ 19				; byte: not 0 = TOS handles the interrupt
+V_OLD			equ 20				; long: TOS's ACIA vector
+V_SIZE			equ 24
+
+PASS_VBLS		equ 50				; TOS keeps the keyboard this long
 
 C64INPUT_CMD		equ $6401			; must match rp/src/c64/c64input.h
 ACIA_VECTOR		equ $118
@@ -85,6 +96,7 @@ IKBD_DATA		equ $fffffc02
 MIDI_CTRL		equ $fffffc04
 MIDI_DATA		equ $fffffc06
 MFP_ISRB		equ $fffffa11
+CONTERM			equ $484			; bit 0 key click, bit 1 key repeat
 NVBLS			equ $454			; number of VBL queue slots
 VBLQUEUE		equ $456			; pointer to the VBL queue
 YM_SELECT		equ $ffff8800
@@ -151,7 +163,8 @@ userfw:
 	bne.s	.save_pal
 
 	; The ACIA handler: copy it with its (zeroed) variables, then take the
-	; vector.
+	; vector. TOS keeps the keyboard for PASS_VBLS (see the top), without
+	; key click and repeat.
 	lea	irq_start(pc), a0
 	lea	ST_IRQ(a4), a1
 	move.w	#(irq_end-irq_start)/2-1, d0
@@ -160,7 +173,14 @@ userfw:
 	dbra	d0, .copy_irq
 	move.w	sr, -(sp)
 	move.w	#$2700, sr
-	move.l	ACIA_VECTOR.w, ST_OLD_ACIA(a4)
+	move.b	CONTERM.w, ST_CONTERM(a4)
+	and.b	#$fc, CONTERM.w
+	move.l	ACIA_VECTOR.w, d0
+	move.l	d0, ST_OLD_ACIA(a4)
+	lea	ST_IRQ_VARS(a4), a0
+	move.l	d0, V_OLD(a0)
+	st	V_PASS(a0)
+	move.l	FRCLOCK.w, ST_START(a4)
 	lea	ST_IRQ(a4), a0
 	move.l	a0, ACIA_VECTOR.w
 	move.w	(sp)+, sr
@@ -235,6 +255,14 @@ userfw:
 	cmp.w	ST_QUIT(a4), d0
 	bne.s	.leave
 	lea	ST_IRQ_VARS(a4), a3
+	tst.b	V_PASS(a3)
+	beq.s	.own_keys
+	move.l	FRCLOCK.w, d0
+	sub.l	ST_START(a4), d0
+	cmp.l	#PASS_VBLS, d0
+	blo	.frame
+	sf	V_PASS(a3)		; the keyboard is ours from here on
+.own_keys:
 	tst.b	V_CHANGED(a3)
 	beq	.frame
 	clr.b	V_CHANGED(a3)
@@ -258,6 +286,7 @@ userfw:
 	move.w	sr, -(sp)
 	move.w	#$2700, sr
 	move.l	ST_OLD_ACIA(a4), ACIA_VECTOR.w
+	move.b	ST_CONTERM(a4), CONTERM.w
 	move.w	(sp)+, sr
 	move.l	ST_SCREENS(a4), d0
 	bsr	set_screen
@@ -357,8 +386,19 @@ wait_vbl:
 ; in rp/src/c64/c64input.h); the mouse buttons in a mouse packet's header,
 ; where the joystick port's fire button arrives, go to scancode bit 0;
 ; other packet bytes are skipped. MIDI bytes are
-; dropped. TOS runs the MFP in software end-of-interrupt mode.
+; dropped. TOS runs the MFP in software end-of-interrupt mode. While
+; V_PASS is set, TOS's handler takes the interrupt instead.
 irq_start:
+	move.l	a0, -(sp)
+	lea	irq_vars(pc), a0
+	tst.b	V_PASS(a0)
+	beq.s	.own
+	move.l	V_OLD(a0), -(sp)	; stack: TOS's handler, a0
+	move.l	4(sp), a0
+	move.l	(sp)+, (sp)		; the handler's address over a0's slot
+	rts				; on to TOS's handler, which returns with rte
+.own:
+	move.l	(sp)+, a0
 	movem.l	d0-d2/a0, -(sp)
 	lea	irq_vars(pc), a0
 .next:
