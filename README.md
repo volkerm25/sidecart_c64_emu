@@ -53,10 +53,12 @@ that the C64 runs even without them on the card.
 
 - **Disks:** D64 (35 or 40 tracks) and D81 images, with or without error
   bytes.
-- **Cartridges:** CRT files up to 512 KB of these types: normal 8 KB,
+- **Cartridges:** CRT files of these types: normal 8 KB,
   16 KB and Ultimax, Ocean, Fun Play, Super Games, C64 Game System /
-  System 3, Dinamic, Magic Desk, EasyFlash. EasyFlash CRTs padded to 1 MB
-  with empty banks work too, as long as their contents fit in 512 KB.
+  System 3, Dinamic, Magic Desk, EasyFlash. They may hold up to about
+  800 KB of contents; empty banks take no room, so EasyFlash CRTs padded
+  to 1 MB load as long as their contents fit. The menu says how much is
+  free when one is too large.
 
 ## Using it
 

@@ -4,12 +4,17 @@
  * ROM in flash (see c64cart.h).
  * License: GPL v3
  *
- * Flash layout (C64CART_FLASH): a descriptor sector, then the ROM. Each
- * bank is `stride` bytes after the previous one, ROMH `romhOffset` bytes
- * after ROML. A chip smaller than its slot is repeated to fill it, as the
- * address lines it does not decode would. Banks past the image read as
- * erased flash ($FF). The descriptor is written last, after the ROM, so a
- * write that did not finish is never mistaken for a cartridge.
+ * Flash layout: the ROM goes into 8 KB slots from the first flash sector
+ * after the code (__c64cart_data_start, so the room depends on the size of
+ * the build) up to the descriptor sector (memmap_rp.ld). A cartridge's
+ * banks are split into 8 KB halves, ROML and ROMH, and the descriptor maps
+ * each half to a slot. Slot 0 stays erased ($FF): every half without a
+ * chip, or with a blank one, points there, so only chips with contents
+ * take room. A chip smaller than 8 KB is repeated to fill its slot, as the
+ * address lines it does not decode would. The descriptor is written last,
+ * after the ROM, so a write that did not finish is never mistaken for a
+ * cartridge; it records where the slots start, so a build of another size
+ * writes the cartridge again.
  */
 
 #include "c64cart.h"
@@ -28,19 +33,22 @@
 // levels (0 = active), now and at every write to the 6510 port.
 void pla_setCartridgeLines(int game, int exrom);
 
-extern uint8_t __c64cart_flash_start[];
-extern uint8_t __c64cart_flash_end[];
+extern uint8_t __c64cart_data_start[];
+extern uint8_t __c64cart_data_end[];
+extern uint8_t __c64cart_descriptor[];
 
 #define DESCRIPTOR_SIZE FLASH_SECTOR_SIZE
-#define DATA_SIZE (512u * 1024u)
-#define ERASE_BLOCK (64u * 1024u)
-#define BANK_SIZE 0x2000u
+#define ERASE_CHUNK (64u * 1024u)  // erased with interrupts off, one at a time
+#define BANK_SIZE 0x2000u          // one half (ROML or ROMH) and one slot
+#define MAX_HALVES 128             // 64 banks of ROML and ROMH
+#define BLANK_SLOT 0
 #define CRT_HEADER_MIN 0x40
 #define CHIP_HEADER_SIZE 0x10
 #define CHIP_TYPE_RAM 1
-#define DESCRIPTOR_MAGIC 0x31545243u  // "CRT1"
+#define DESCRIPTOR_MAGIC 0x32545243u  // "CRT2"
 
-#define DATA_START (__c64cart_flash_start + DESCRIPTOR_SIZE)
+#define DATA_START __c64cart_data_start
+#define DATA_SIZE ((uint32_t)(__c64cart_data_end - __c64cart_data_start))
 
 enum {
   TYPE_NORMAL = 0,
@@ -53,9 +61,9 @@ enum {
   TYPE_EASYFLASH = 32,
 };
 
-// Where a CRT's chips go: by load address into one 16 KB bank (normal
-// cartridges), by bank number into 8 KB banks, or into 16 KB banks (ROML,
-// then ROMH).
+// Which half a CRT's chip is: by load address in one 16 KB bank (normal
+// cartridges), by bank number in 8 KB banks, or by bank number and load
+// address in 16 KB banks (ROML, then ROMH).
 typedef enum { LAYOUT_FIXED, LAYOUT_8K, LAYOUT_16K } Layout;
 
 // The inserted cartridge, as stored in the descriptor sector. Zeroed before
@@ -68,15 +76,17 @@ typedef struct {
   uint16_t type;      // CRT hardware type
   uint8_t game;       // lines after a reset (1 = inactive)
   uint8_t exrom;
-  uint32_t stride;
-  uint32_t romhOffset;
-  uint32_t bankMask;
+  uint8_t halvesPerBank;  // 2: ROML and ROMH per bank; 1: one 8 KB half
+  uint8_t romhHalf;       // ROMH: the bank's second half (1) or its first
+  uint16_t bankMask;
+  uint32_t dataStart;  // where the slots began when the ROM was written
+  uint16_t slotOf[MAX_HALVES];  // each half's slot (BLANK_SLOT: none)
   char name[64];
 } Cartridge;
 
-static_assert(sizeof(Cartridge) <= FLASH_PAGE_SIZE, "descriptor too large");
-static_assert(DESCRIPTOR_SIZE + DATA_SIZE <= 516u * 1024u,
-              "cartridge data larger than C64CART_FLASH");
+#define DESCRIPTOR_WRITE_SIZE (2 * FLASH_PAGE_SIZE)
+static_assert(sizeof(Cartridge) <= DESCRIPTOR_WRITE_SIZE,
+              "descriptor too large");
 
 // Set by c64cart_reset before any map reads them. Not initialised, to keep
 // them out of .data.
@@ -91,6 +101,7 @@ static uint8_t easyFlashRam[256];
 
 static Cartridge cart;
 static bool inserted;
+static uint8_t currentBank;    // for the dump
 static bool superGamesLocked;  // bit 3 of $DF00 locks it until a reset
 static uint8_t lastMode;       // for the dump: the last register value
 static char errorText[41];
@@ -99,10 +110,16 @@ static char errorText[41];
 // Core 1: banks and lines
 // ---------------------------------------------------------------------------
 
+static const uint8_t *halfData(unsigned half) {
+  return DATA_START + (uint32_t)cart.slotOf[half] * BANK_SIZE;
+}
+
 static void selectBank(unsigned bank) {
-  const uint8_t *roml = DATA_START + (bank & cart.bankMask) * cart.stride;
-  c64cart_roml = roml;
-  c64cart_romh = roml + cart.romhOffset;
+  bank &= cart.bankMask;
+  currentBank = (uint8_t)bank;
+  unsigned first = bank * cart.halvesPerBank;
+  c64cart_roml = halfData(first);
+  c64cart_romh = halfData(first + cart.romhHalf);
 }
 
 void c64cart_getDumpInfo(uint8_t *info) {
@@ -110,9 +127,7 @@ void c64cart_getDumpInfo(uint8_t *info) {
   uint16_t type = inserted ? cart.type : 0xFFFF;
   info[0] = (uint8_t)type;
   info[1] = (uint8_t)(type >> 8);
-  if (inserted && cart.stride != 0 && c64cart_roml != NULL) {
-    info[2] = (uint8_t)((uint32_t)(c64cart_roml - DATA_START) / cart.stride);
-  }
+  if (inserted) info[2] = currentBank;
   info[3] = lastMode;
 }
 
@@ -218,35 +233,35 @@ static bool setUpType(Cartridge *c, Layout *layout) {
   switch (c->type) {
     case TYPE_NORMAL:  // lines as the CRT header gives them
       *layout = LAYOUT_FIXED;
-      c->stride = 0;
-      c->romhOffset = BANK_SIZE;
+      c->halvesPerBank = 2;
+      c->romhHalf = 1;
       return true;
     case TYPE_OCEAN:  // ROMH shows the ROML bank; lines set after the scan
       *layout = LAYOUT_8K;
-      c->stride = BANK_SIZE;
-      c->romhOffset = 0;
+      c->halvesPerBank = 1;
+      c->romhHalf = 0;
       return true;
     case TYPE_FUNPLAY:
     case TYPE_C64GS:
     case TYPE_DINAMIC:
     case TYPE_MAGICDESK:  // 8 KB at $8000
       *layout = LAYOUT_8K;
-      c->stride = BANK_SIZE;
-      c->romhOffset = 0;
+      c->halvesPerBank = 1;
+      c->romhHalf = 0;
       c->game = 1;
       c->exrom = 0;
       return true;
     case TYPE_EASYFLASH:  // ROML and ROMH banks; starts in Ultimax mode
       *layout = LAYOUT_16K;
-      c->stride = 2 * BANK_SIZE;
-      c->romhOffset = BANK_SIZE;
+      c->halvesPerBank = 2;
+      c->romhHalf = 1;
       c->game = 0;
       c->exrom = 1;
       return true;
     case TYPE_SUPERGAMES:  // 16 KB at $8000
       *layout = LAYOUT_16K;
-      c->stride = 2 * BANK_SIZE;
-      c->romhOffset = BANK_SIZE;
+      c->halvesPerBank = 2;
+      c->romhHalf = 1;
       c->game = 0;
       c->exrom = 0;
       return true;
@@ -255,10 +270,10 @@ static bool setUpType(Cartridge *c, Layout *layout) {
   }
 }
 
-// Where a ROM chip goes in the data area, and the slot it fills. The slot
-// may lie past the data area; the caller checks.
-static bool chipSlot(Layout layout, unsigned bank, unsigned address,
-                     unsigned size, uint32_t *offset, uint32_t *slot) {
+// The first half a ROM chip fills, and how many (a 16 KB chip at $8000
+// fills ROML and ROMH).
+static bool chipHalves(Layout layout, unsigned bank, unsigned address,
+                       unsigned size, unsigned *half, unsigned *halves) {
   if (size < FLASH_PAGE_SIZE || size > 2 * BANK_SIZE || (size & (size - 1))) {
     return false;
   }
@@ -266,22 +281,22 @@ static bool chipSlot(Layout layout, unsigned bank, unsigned address,
   if (!high && address != 0x8000) return false;
   if (high && size > BANK_SIZE) return false;
   if (address == 0xF000 && size > 0x1000) return false;
-  *offset = 0;
+  *half = 0;
   switch (layout) {
     case LAYOUT_FIXED:
       if (bank != 0) return false;
-      *offset = high ? BANK_SIZE : 0;
+      *half = high ? 1 : 0;
       break;
     case LAYOUT_8K:
       if (size > BANK_SIZE) return false;
-      *offset = bank * BANK_SIZE;
+      *half = bank;
       break;
     case LAYOUT_16K:
-      *offset = bank * 2 * BANK_SIZE + (high ? BANK_SIZE : 0);
+      *half = bank * 2 + (high ? 1 : 0);
       break;
   }
-  *slot = (size > BANK_SIZE) ? 2 * BANK_SIZE : BANK_SIZE;
-  return true;
+  *halves = (size > BANK_SIZE) ? 2 : 1;
+  return *half + *halves <= MAX_HALVES;
 }
 
 static uint32_t flashOffset(const uint8_t *address) {
@@ -309,16 +324,22 @@ static bool isBlank(const uint8_t *data, unsigned size) {
   return true;
 }
 
-// Visit the CRT's ROM chips, reading each into scratch. With program false,
-// check them and find the highest bank and the end of the data; with
-// program true, write each to flash. A blank chip ($FF, as erased flash
-// reads) is not written, and past the data area it is left out: EasyFlash
-// CRTs are often padded to 1 MB with them.
+// Visit the CRT's ROM chips, reading each into scratch, and give each one
+// with contents its slots, in file order, from slot 1 on: c->slotOf and
+// *slots (the slots taken, BLANK_SLOT included) come out the same on every
+// pass. With program true, write the chips to flash as well. Blank chips
+// ($FF, as erased flash reads) take no slot: EasyFlash CRTs are often
+// padded to 1 MB with them.
 static const char *walkChips(FIL *file, FSIZE_t start, FSIZE_t fileSize,
                              Layout layout, bool program, uint8_t *scratch,
-                             unsigned *maxBank, uint32_t *end) {
+                             Cartridge *c, unsigned *maxBank,
+                             unsigned *slots) {
   uint8_t chip[CHIP_HEADER_SIZE];
   unsigned chips = 0;
+  unsigned slotCount = (unsigned)(DATA_SIZE / BANK_SIZE);
+  memset(c->slotOf, 0, sizeof(c->slotOf));  // BLANK_SLOT
+  *slots = BLANK_SLOT + 1;
+  *maxBank = 0;
   FSIZE_t pos = start;
   while (pos + CHIP_HEADER_SIZE <= fileSize) {
     UINT got = 0;
@@ -338,33 +359,38 @@ static const char *walkChips(FIL *file, FSIZE_t start, FSIZE_t fileSize,
       return "Bad CHIP packet in CRT";
     }
     if (type != CHIP_TYPE_RAM) {
-      uint32_t offset;
-      uint32_t slot;
-      if (!chipSlot(layout, bank, address, size, &offset, &slot)) {
+      unsigned half;
+      unsigned halves;
+      if (!chipHalves(layout, bank, address, size, &half, &halves)) {
         return "Unsupported ROM layout or size";
       }
       if (f_read(file, scratch, size, &got) != FR_OK || got != size) {
         return "Cannot read the CRT file";
       }
-      bool blank = isBlank(scratch, size);
-      if (offset + slot > DATA_SIZE) {
-        if (!blank) return "Cartridge larger than 512 KB";
-      } else if (program) {
-        if (!blank) {
-          for (uint32_t at = size; at < slot; at += size) {
+      if (bank > *maxBank) *maxBank = bank;
+      chips++;
+      if (!isBlank(scratch, size)) {
+        if (*slots + halves > slotCount) {
+          snprintf(errorText, sizeof(errorText), "Cartridge too large (%u KB free)",
+                   (unsigned)((slotCount - 1) * BANK_SIZE / 1024));
+          return errorText;
+        }
+        for (unsigned i = 0; i < halves; i++) {
+          c->slotOf[half + i] = (uint16_t)(*slots + i);
+        }
+        if (program) {
+          uint32_t fill = halves * BANK_SIZE;
+          for (uint32_t at = size; at < fill; at += size) {
             memcpy(scratch + at, scratch, size);
           }
-          flashProgram(DATA_START + offset, scratch, slot);
+          flashProgram(DATA_START + *slots * BANK_SIZE, scratch, fill);
         }
-      } else {
-        if (bank > *maxBank) *maxBank = bank;
-        if (offset + slot > *end) *end = offset + slot;
-        chips++;
+        *slots += halves;
       }
     }
     pos += packetSize;
   }
-  return (program || chips) ? NULL : "No ROM in the CRT file";
+  return chips ? NULL : "No ROM in the CRT file";
 }
 
 static const char *loadCartridge(FIL *file, const FILINFO *info,
@@ -395,33 +421,35 @@ static const char *loadCartridge(FIL *file, const FILINFO *info,
     return errorText;
   }
 
-  unsigned maxBank = 0;
-  uint32_t end = 0;
+  c.dataStart = (uint32_t)(uintptr_t)DATA_START;
+  unsigned maxBank;
+  unsigned slots;
   const char *error = walkChips(file, headerSize, info->fsize, layout, false,
-                                scratch, &maxBank, &end);
+                                scratch, &c, &maxBank, &slots);
   if (error) return error;
   unsigned banks = 1;
   while (banks <= maxBank) banks <<= 1;
-  if (banks * c.stride > DATA_SIZE) return "Cartridge larger than 512 KB";
-  c.bankMask = banks - 1;
+  c.bankMask = (uint16_t)(banks - 1);
   if (c.type == TYPE_OCEAN) {
     // 512 KB Ocean cartridges run in 8 KB mode, the others in 16 KB mode.
-    c.game = (banks * BANK_SIZE == DATA_SIZE) ? 1 : 0;
+    c.game = (banks == 64) ? 1 : 0;
     c.exrom = 0;
   }
 
-  if (memcmp(__c64cart_flash_start, &c, sizeof(c)) != 0) {
-    flashErase(__c64cart_flash_start, DESCRIPTOR_SIZE);
-    for (uint32_t at = 0; at < end; at += ERASE_BLOCK) {
-      flashErase(DATA_START + at, ERASE_BLOCK);
+  if (memcmp(__c64cart_descriptor, &c, sizeof(c)) != 0) {
+    flashErase(__c64cart_descriptor, DESCRIPTOR_SIZE);
+    uint32_t used = slots * BANK_SIZE;
+    for (uint32_t at = 0; at < used; at += ERASE_CHUNK) {
+      uint32_t chunk = used - at < ERASE_CHUNK ? used - at : ERASE_CHUNK;
+      flashErase(DATA_START + at, chunk);
     }
     error = walkChips(file, headerSize, info->fsize, layout, true, scratch,
-                      &maxBank, &end);
+                      &c, &maxBank, &slots);
     if (error) return error;
-    memset(scratch, 0xFF, FLASH_PAGE_SIZE);
+    memset(scratch, 0xFF, DESCRIPTOR_WRITE_SIZE);
     memcpy(scratch, &c, sizeof(c));
-    flashProgram(__c64cart_flash_start, scratch, FLASH_PAGE_SIZE);
-    if (memcmp(__c64cart_flash_start, &c, sizeof(c)) != 0) {
+    flashProgram(__c64cart_descriptor, scratch, DESCRIPTOR_WRITE_SIZE);
+    if (memcmp(__c64cart_descriptor, &c, sizeof(c)) != 0) {
       return "Flash write failed";
     }
   }

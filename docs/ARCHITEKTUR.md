@@ -304,8 +304,17 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 
 **CRT-Module (Steckmodule), bestätigt 2026-11-18:** einfache Module und größere bis ~80 KB laufen; EasyFlash wird wie vorgesehen mit „CRT type 32 not supported“ abgewiesen.
 - `rp/src/c64/c64cart.c`. CRT-Dateien stehen im F10-Menü neben den Disks. RETURN oder Leertaste stecken ein und setzen zurück, E zieht ab (mit Reset). Zeile 2 des Menüs zeigt das Modul.
-- Typen: 0 (8K, 16K, Ultimax), Ocean (5), Fun Play (7), Super Games (8), C64 Game System / System 3 (15), Dinamic (17), Magic Desk (19). Bis 512 KB.
-- Speicher: eigener Flash-Bereich `C64CART_FLASH` (0x1007F000, 4 KB Deskriptor + 512 KB ROM); `FLASH` für den Code auf 508 KB verkleinert (belegt ~380 KB).
+- Typen: 0 (8K, 16K, Ultimax), Ocean (5), Fun Play (7), Super Games (8), C64 Game System / System 3 (15), Dinamic (17), Magic Desk (19), EasyFlash (32).
+- Speicher (seit 2026-11-22): Der Modulbereich beginnt am ersten 4-KB-Sektor nach dem Code (`__c64cart_data_start`) und reicht bis zum Deskriptor-Sektor bei 0x10119000; die ROMs liegen bei 0x1011A000 bis zum Ende des App-Bereichs (1152 KB).
+  - Release-Build: Code ~288 KB, frei für Module ~824 KB. Debug-Build: Code ~363 KB, entsprechend weniger. `make deploy` baut deshalb Release.
+  - Der ROM-Inhalt liegt in 8-KB-Plätzen. Eine Tabelle im Deskriptor ordnet jede Hälfte (64 Bänke × ROML/ROMH) einem Platz zu. Platz 0 bleibt gelöscht und dient allen leeren Hälften, leere Chips kosten also keinen Platz.
+  - Der Deskriptor merkt sich die Startadresse. Ein Build anderer Größe schreibt das Modul neu.
+  - Lemmings (EasyFlash, 768 KB Inhalt in 49 Bänken) passt; auf dem Host Byte für Byte gegen die CRT geprüft.
+  - Lemmings startet und lädt, aber Texte und Grafiken sind teilweise verstümmelt (offen, Stand 2026-11-22):
+    - Levelbeschreibung: Der Bildschirm `$4000` ist identisch mit VICE, der Zeichensatz `$6000` weicht ab `$62AA` bis `$64FF` ab (458 Bytes).
+    - Ursache dort: Der Entpacker bei `$CC40` (Kopierphase ab `$CC6F`, Entpacken ab `$CC8D`) arbeitet auf einem gepackten Block, dessen letzte 17 Bytes (`$CB20`–`$CB30`) bei uns nie geschrieben wurden. In VICE stehen dort Daten.
+    - Vorher läuft unser Lemmings anders als in VICE: Bei der Levelbeschreibung ist die Zeropage in VICE fast leer, bei uns stehen Tabellen in `$10`–`$5B` und Startphasen-Zeiger in `$FB`–`$FF`. Der Lader im EasyFlash-RAM sichert `$FB`–`$FF` nach `$DF4C` und stellt sie bei `$8543` wieder her.
+    - Nächster Schritt: pico64 auf dem Host laufen lassen und eine Befehlsspur mit der CPU-Historie von VICE vergleichen.
   - Beim Einstecken hält core0 core1 im Reset (er führt den Kern aus dem Flash aus), schreibt das ROM und startet core1 neu. Als Puffer dient das C64-RAM.
   - Gleiche Datei (Name, Größe, Datum) wird nicht neu geschrieben. Der Deskriptor wird zuletzt geschrieben.
   - Der C64 liest das ROM direkt aus dem Flash (XIP). Geschwindigkeit noch messen.
@@ -320,7 +329,7 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
     - VIC-Zeiger im ungültigen Bitmap-Modus (ECM+BMM) zeigte ins Leere; HardFault auf core 1.
     - Die LOAD-Falle ignorierte einen umgebogenen LOAD-Vektor `$0330`.
   - Weitere Module noch nicht getestet.
-  - Nur lesend, bis 512 KB (32 Bänke ROML+ROMH). Leere Chips (`$FF`) oberhalb von 512 KB werden übersprungen; viele EasyFlash-CRTs sind damit auf 1 MB aufgefüllt.
+  - Nur lesend, bis 64 Bänke. Leere Chips (`$FF`) belegen keinen Platz; viele EasyFlash-CRTs sind damit auf 1 MB aufgefüllt.
   - Start im Ultimax-Modus mit Bank 0. `$DE00` wählt die Bank, `$DE02` den Modus (Boot-Jumper gesetzt).
   - Eigene 256 Byte RAM bei `$DF00` (`c64cart_io2Ram`), getrennt vom C64-RAM unter dem I/O-Bereich, das Spiele für Grafik nutzen. Im Ultimax-Modus lieferten Lesezugriffe auf I/O 1/2 bisher 0; jetzt lesen sie wie in den anderen Modi.
 - Nicht unterstützt: Ultimax-Grafik (der VIC sieht das Modul-ROM nicht), EasyFlash schreiben (EAPI), Freezer.
@@ -329,7 +338,7 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
 
 **ROMs von der SD-Karte, bestätigt 2026-11-18:**
 - `rp/src/c64/c64roms.c`. Dateien in `/c64/roms`: `basic.bin`, `kernal.bin`, `chargen.bin`. Die VICE-Namen und die Namen mit Teilenummer werden auch erkannt.
-- Eigener Flash-Bereich `C64ROMS_FLASH` (0x10079000, 20 KB ROMs + 4 KB Deskriptor); `FLASH` auf 484 KB verkleinert. Der Linker legt `rom_basic`, `rom_kernal` und `rom_characters` dorthin (`PROVIDE`, damit `C64_ROMS_IN_RAM` sie überschreiben kann).
+- Eigener Flash-Bereich `C64ROMS_FLASH` (seit 2026-11-22 bei 0x1011A000 am Ende des App-Bereichs, vorher 0x10079000; 20 KB ROMs + 4 KB Deskriptor). Der Linker legt `rom_basic`, `rom_kernal` und `rom_characters` dorthin (`PROVIDE`, damit `C64_ROMS_IN_RAM` sie überschreiben kann).
 - Beim Start vor core1: Vergleich mit dem Flash, Schreiben nur bei Unterschied, Puffer ist das C64-RAM. Ohne Dateien auf der Karte gilt die Kopie im Flash.
 - Die Trap-Opcodes für LOAD/SAVE (`$D2`/`$F2` statt `JMP` bei `$FFD5`/`$FFD8`) setzt der Lader. Ein KERNAL ohne die beiden `JMP` wird abgewiesen.
 - Ohne ROMs startet der C64 nicht. Das Setup-Menü zeigt „C64 ROMs : …“, und `[F]irmware` wird mit einem Hinweis verweigert.

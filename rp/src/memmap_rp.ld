@@ -23,13 +23,15 @@
 
 MEMORY
 {
-    FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 484k  /* App code */
+    /* The app's 1152 KB: the code, then the cartridge ROM (c64/c64cart.c)
+       from the first 4 KB boundary after the code up to the cartridge's
+       descriptor sector, then the C64 ROMs. The cartridge gets what the
+       code leaves. */
+    FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 1124k
+    C64CART_DESCRIPTOR(r) : ORIGIN = 0x10119000, LENGTH = 4k
     /* C64 ROMs (c64/c64roms.c), copied from the SD card: BASIC, KERNAL,
        character generator (20 KB), then a 4 KB descriptor sector. */
-    C64ROMS_FLASH(r) : ORIGIN = 0x10079000, LENGTH = 24k
-    /* C64 cartridge ROM (c64/c64cart.c): a 4 KB descriptor sector, then
-       512 KB of ROM banks starting on a 64 KB erase block. */
-    C64CART_FLASH(r) : ORIGIN = 0x1007F000, LENGTH = 516k
+    C64ROMS_FLASH(r) : ORIGIN = 0x1011A000, LENGTH = 24k
     ROM_TEMP(rw) : ORIGIN = 0x10100000, LENGTH = 128k /* Store the 128KB ROM loaded here */
 
 /* This is the default flash space for the app if you don't need room to store data */
@@ -51,8 +53,8 @@ __c64roms_flash_start = ORIGIN(C64ROMS_FLASH);
 PROVIDE(rom_basic = ORIGIN(C64ROMS_FLASH));
 PROVIDE(rom_kernal = ORIGIN(C64ROMS_FLASH) + 0x2000);
 PROVIDE(rom_characters = ORIGIN(C64ROMS_FLASH) + 0x4000);
-__c64cart_flash_start = ORIGIN(C64CART_FLASH);
-__c64cart_flash_end = ORIGIN(C64CART_FLASH) + LENGTH(C64CART_FLASH);
+__c64cart_descriptor = ORIGIN(C64CART_DESCRIPTOR);
+__c64cart_data_end = ORIGIN(C64CART_DESCRIPTOR);
 
 ENTRY(_entry_point)
 
@@ -269,6 +271,8 @@ SECTIONS
     .flash_end : {
         PROVIDE(__flash_binary_end = .);
     } > FLASH
+    /* The cartridge ROM starts on the first flash sector after the code. */
+    __c64cart_data_start = ALIGN(__flash_binary_end, 4096);
 
    .rom_temp :
     {

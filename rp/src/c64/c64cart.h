@@ -1,7 +1,7 @@
 /**
  * File: c64cart.h
  * Description: The C64's expansion port: a cartridge from a CRT file on the
- * SD card, its ROM in a reserved flash area (C64CART_FLASH in memmap_rp.ld).
+ * SD card, its ROM in the flash the code leaves free (memmap_rp.ld).
  * License: GPL v3
  *
  * Inserting copies the CRT's ROM chips to flash, which takes core 1 away
@@ -12,8 +12,10 @@
  *
  * Hardware types: 0 normal (8 KB, 16 KB, Ultimax), 5 Ocean, 7 Fun Play,
  * 8 Super Games, 15 C64 Game System / System 3, 17 Dinamic, 19 Magic Desk,
- * 32 EasyFlash (read only: its flash cannot be written). Up to 512 KB; blank
- * chips past that are left out. In Ultimax mode the VIC does not see the
+ * 32 EasyFlash (read only: its flash cannot be written). Chips with
+ * contents up to the free flash (about 800 KB in a release build, less in
+ * a debug build); blank chips take no room. In Ultimax mode the VIC does
+ * not see the
  * cartridge ROM. EasyFlash's 256 bytes of RAM at $DF00 are kept apart from
  * the C64's RAM under the I/O area (c64cart_io2Ram).
  */
