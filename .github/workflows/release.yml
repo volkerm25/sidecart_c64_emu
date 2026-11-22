@@ -61,14 +61,10 @@ jobs:
     - name: Date the build by its commit
       run: echo "RELEASE_DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
 
-    - name: Install dependencies
-      run: |
-        pip install boto3
-          
+    # The Makefile's release target carries the app's UUID and the 250 MHz
+    # and 1.15 V the emulator needs.
     - name: Run - Build PICO_W release version
-      env:
-        APP_UUID: ${{ secrets.APP_UUID }}
-      run: ./build.sh pico_w Release ${APP_UUID:-44444444-4444-4444-8444-444444444444}
+      run: make release
 
     - name: Get current date
       id: build
@@ -78,18 +74,25 @@ jobs:
       id: get_version
       run: echo "RELEASE_VERSION=$(cat version.txt)" >> $GITHUB_ENV
 
+    # The newest version's section: from its heading to the next one.
     - name: Read partial CHANGELOG.md content
       id: changelog
       run: |
         echo "CHANGELOG<<EOF" >> $GITHUB_ENV
-        awk '/^---$/ { exit } { print }' CHANGELOG.md >> $GITHUB_ENV
+        awk '/^## / { if (seen) exit; seen = 1 } seen { print }' CHANGELOG.md >> $GITHUB_ENV
         echo "EOF" >> $GITHUB_ENV
 
+    # apps.json, for the SidecarTridge store, goes with every release; the
+    # store reads it at releases/latest/download/apps.json. The last
+    # release's list gives previous_versions.
     - name: Copy release artifacts
       run: |
         mkdir -p release
         cp dist/*.uf2 release/
         cp dist/*.json release/
+        curl -fsSL "https://github.com/${{ github.repository }}/releases/latest/download/apps.json" \
+          -o previous-apps.json || rm -f previous-apps.json
+        python3 tools/make_apps_json.py dist/*-*-*-*-*.json previous-apps.json release/apps.json
 
     - name: Upload the binaries to release
       uses: svenstaro/upload-release-action@v2
@@ -107,26 +110,3 @@ jobs:
         file_glob: true
         overwrite: true
         make_latest: true
-
-    - name: Upload artifacts to S3
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: us-east-1  # or your bucket's region
-      run: |
-        python3 <<EOF
-        import os
-        import boto3
-
-        s3 = boto3.client('s3')
-        release_dir = 'release'
-        bucket_name = 'atarist.sidecartridge.com'
-
-        for filename in os.listdir(release_dir):
-            local_path = os.path.join(release_dir, filename)
-            s3_path = filename  # uploaded at root of the bucket
-            print(f"Uploading {local_path} to s3://{bucket_name}/{s3_path}")
-            s3.upload_file(local_path, bucket_name, s3_path)
-        EOF
-
-  

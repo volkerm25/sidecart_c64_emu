@@ -26,7 +26,9 @@ but not all; the [limits](#what-does-not-work-yet) below say why.
 
 The app is not in the Booster's app store yet; install it by hand:
 
-1. Download the release: `a801bcb1-6755-44f4-8d6d-922b7699976f-<version>.uf2`
+1. Download the release from
+   [GitHub](https://github.com/volkerm25/sidecart_c64_emu/releases):
+   `a801bcb1-6755-44f4-8d6d-922b7699976f-<version>.uf2`
    and `a801bcb1-6755-44f4-8d6d-922b7699976f.json`.
 2. Copy both to the `/apps` folder of the SD card. Name the `.uf2` file
    without the version: `a801bcb1-6755-44f4-8d6d-922b7699976f.uf2`.

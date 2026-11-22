@@ -71,3 +71,13 @@ tools/dev/logs/
 tools/dev/builds/
 *.pyc
 __pycache__/
+
+# Games, disk images, state dumps and photos kept in the project folder
+# while testing: not ours to publish.
+/*.crt
+/*.d64
+/*.d81
+/*.prg
+/*.png
+!/icon.png
+/c64dump.bin
