@@ -125,9 +125,17 @@ static void push16(uint16_t value) {
 }
 
 // Device 8 with a D64 mounted: load from it (c64drive); anything else goes
-// on to the KERNAL's serial bus code, where no device answers.
+// on to the KERNAL's serial bus code, where no device answers. A program
+// that has pointed the LOAD vector ($0330) elsewhere (a cartridge's loader,
+// a fast loader) gets its own routine, as the KERNAL's JMP ($0330) would.
+#define KERNAL_LOAD_VECTOR 0x0330
+#define KERNAL_LOAD_DEFAULT 0xF4A5  // where the KERNAL points the vector
+
 void patchLOAD(void) {
-  if (cpu.RAM[0xBA] != 8 || c64drive_mountedName() == NULL) {
+  uint16_t vector =
+      cpu.RAM[KERNAL_LOAD_VECTOR] | (cpu.RAM[KERNAL_LOAD_VECTOR + 1] << 8);
+  if (vector != KERNAL_LOAD_DEFAULT || cpu.RAM[0xBA] != 8 ||
+      c64drive_mountedName() == NULL) {
     continueUntrapped();
     return;
   }
