@@ -11,6 +11,8 @@
 #include <string.h>
 #include <strings.h>
 
+#include "pico/rand.h"
+
 #include "c64cart.h"
 #include "c64drive.h"
 #include "c64host.h"
@@ -19,7 +21,7 @@
 #include "chandler.h"
 #include "constants.h"
 
-static_assert(C64MENU_END_OFFSET <= CHANDLER_FRAMEBUFFER_OFFSET,
+static_assert(C64MENU_WINDOW_END_OFFSET <= CHANDLER_FRAMEBUFFER_OFFSET,
               "disk menu counter overlaps the terminal framebuffer");
 
 #define WINDOW_WORDS(offset) \
@@ -55,6 +57,12 @@ static char message[COLS + 1];
 static uint16_t quitCount;
 
 void c64menu_init(void) { WINDOW_WORDS(C64MENU_QUIT_OFFSET)[0] = quitCount; }
+
+void c64menu_publishBootId(void) {
+  uint16_t id = (uint16_t)get_rand_32();
+  if (id == 0) id = 1;
+  WINDOW_WORDS(C64MENU_BOOT_ID_OFFSET)[0] = id;
+}
 
 bool c64menu_isOpen(void) { return menuOpen; }
 

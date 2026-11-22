@@ -38,6 +38,13 @@
 ; desktop: the RP counts Q presses in the cartridge window, and the viewer
 ; leaves when the count differs from the one it saw at its start.
 ;
+; SELECT restarts the RP, which takes the cartridge away for a moment and
+; then holds the setup menu. So the viewer copies itself into its RAM block
+; at the start and runs there, and notes the boot number the RP puts into
+; the window at each boot. When it changes, the viewer undoes what it did to
+; TOS, waits until the cartridge is back, and resets the ST, which boots
+; into the setup menu.
+;
 ; Sound: the RP turns the SID into YM2149 registers once per C64 frame and
 ; keeps them in the cartridge window (rp/src/c64/c64sid.h); a routine in the
 ; VBL queue writes them into the YM2149 at every VBL.
@@ -58,10 +65,15 @@ VIDEO_STAMPS_ADDR	equ VIDEO_PALETTE_ADDR+32
 SOUND_YM_ADDR		equ VIDEO_STAMPS_ADDR+VIDEO_LINES*2
 ; Word: the disk menu's Q presses; must match rp/src/c64/c64menu.h.
 MENU_QUIT_ADDR		equ SOUND_YM_ADDR+12
+; Word: the RP's boot number, never 0; must match rp/src/c64/c64menu.h.
+BOOT_ID_ADDR		equ MENU_QUIT_ADDR+2
+CA_MAGIC_VALUE		equ $abcdef42		; the cartridge header's first long
+BACK_VBLS		equ 10			; cartridge seen back this long: reset
 
 ; RAM block (Malloc): the viewer's state first (indexed accesses reach only
 ; 127 bytes), then the copy of the ACIA handler with its variables, then the
-; second screen, 256-byte aligned inside its span.
+; second screen, 256-byte aligned inside its span, then the copy of this
+; module that runs.
 ST_PALETTE_SAVE		equ 0				; 16 words, the desktop's palette
 ST_SCREENS		equ ST_PALETTE_SAVE+32		; 2 longs: screen 0 (TOS's), screen 1
 ST_HELD			equ ST_SCREENS+8		; 2 words: frame number each screen holds
@@ -73,10 +85,12 @@ ST_VBL_SLOT		equ ST_OLD_ACIA+4		; long: our VBL queue slot, or 0
 ST_QUIT			equ ST_VBL_SLOT+4		; word: MENU_QUIT_ADDR at the start
 ST_START		equ ST_QUIT+2			; long: FRCLOCK at the start
 ST_CONTERM		equ ST_START+4			; byte: TOS's conterm
-ST_IRQ			equ ST_CONTERM+2		; the handler's copy
+ST_BOOT_ID		equ ST_CONTERM+2		; word: BOOT_ID_ADDR at the start
+ST_IRQ			equ ST_BOOT_ID+2		; the handler's copy
 ST_IRQ_VARS		equ ST_IRQ+(irq_vars-irq_start)
 ST_SCREEN_SPAN		equ ST_IRQ+(irq_end-irq_start)
-RAM_BUFFER_SIZE		equ ST_SCREEN_SPAN+VIDEO_SCREEN_SIZE+256
+ST_CODE			equ ST_SCREEN_SPAN+VIDEO_SCREEN_SIZE+256
+RAM_BUFFER_SIZE		equ ST_CODE+(userfw_end-userfw)
 
 ; The handler's variables (offsets from irq_vars).
 V_KEYS			equ 0				; 16 bytes, one bit per scancode
@@ -139,6 +153,21 @@ userfw:
 	rts
 .mem_ok:
 	move.l	d0, a4			; a4 = RAM block (kept, except in the copy loop)
+
+	; Run from RAM from here on (see the top).
+	lea	userfw(pc), a0
+	move.l	a4, a1
+	add.l	#ST_CODE, a1
+	move.w	#(userfw_end-userfw)/2-1, d0
+.copy_code:
+	move.w	(a0)+, (a1)+
+	dbra	d0, .copy_code
+	move.l	a4, a0
+	add.l	#ST_CODE+(.in_ram-userfw), a0
+	jmp	(a0)
+.in_ram:
+	move.w	BOOT_ID_ADDR, ST_BOOT_ID(a4)
+	move.l	a4, d0
 	move.l	d6, ST_SCREENS(a4)
 	add.l	#ST_SCREEN_SPAN+255, d0
 	clr.b	d0
@@ -247,6 +276,11 @@ userfw:
 	movem.l	d0-d7, PALETTE_REGS.w
 	eori.w	#2, ST_BACK(a4)
 
+	; The RP restarted (SELECT): back to the setup menu.
+	move.w	BOOT_ID_ADDR, d0
+	cmp.w	ST_BOOT_ID(a4), d0
+	bne	rp_restarted
+
 	; Leave when the disk menu's Q count changed. Otherwise send the key
 	; and joystick state if it changed; the flag is cleared before the state
 	; is read, so a change in between is sent on the next pass. A failed
@@ -295,12 +329,49 @@ userfw:
 	trap	#14
 	addq.l	#6, sp
 	bsr	wait_vbl
+	print	msg_cls(pc)
+	; The block holds this code: free it last. TOS does not touch freed
+	; memory before the next allocation.
 	move.l	a4, -(sp)
 	move.w	#Mfree, -(sp)
 	trap	#1
 	addq.l	#6, sp
-	print	msg_cls(pc)
 	rts
+
+; The RP has restarted: the C64 is gone and the cartridge will hold the
+; setup menu. Take our routines out of TOS, wait until the cartridge has
+; been back for BACK_VBLS, then reset the ST through the reset vector; it
+; boots into the menu. The block is not freed, the reset takes everything.
+rp_restarted:
+	move.l	ST_VBL_SLOT(a4), d0
+	beq.s	.no_vbl
+	move.l	d0, a0
+	clr.l	(a0)
+.no_vbl:
+	bsr	ym_silence
+	move.w	sr, -(sp)
+	move.w	#$2700, sr
+	move.l	ST_OLD_ACIA(a4), ACIA_VECTOR.w
+	move.b	ST_CONTERM(a4), CONTERM.w
+	move.w	(sp)+, sr
+	moveq	#0, d7			; VBLs the cartridge has been back
+.wait_back:
+	bsr	wait_vbl
+	cmp.l	#CA_MAGIC_VALUE, ROM4_ADDR
+	bne.s	.not_back
+	move.w	BOOT_ID_ADDR, d0
+	beq.s	.not_back
+	cmp.w	ST_BOOT_ID(a4), d0
+	beq.s	.not_back
+	addq.w	#1, d7
+	cmp.w	#BACK_VBLS, d7
+	blo.s	.wait_back
+	move.w	#$2700, sr
+	move.l	$4.w, a0
+	jmp	(a0)
+.not_back:
+	moveq	#0, d7
+	bra.s	.wait_back
 
 ; VBL queue routine: YM2149 registers 0-10 from the cartridge window into
 ; the chip. Register 7 keeps the chip's I/O port direction bits (6, 7);
@@ -501,7 +572,7 @@ msg_wrong_rez:
 	dc.b	27,"E","C64: bitte in niedriger Aufloesung",13,10
 	dc.b	"(320x200) starten. Taste druecken.",13,10,0
 msg_no_mem:
-	dc.b	27,"E","C64: kein Speicher (33 KB).",13,10
+	dc.b	27,"E","C64: kein Speicher (35 KB).",13,10
 	dc.b	"Taste druecken.",13,10,0
 msg_cls:
 	dc.b	27,"E",0

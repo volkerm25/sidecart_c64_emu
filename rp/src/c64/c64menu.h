@@ -26,9 +26,19 @@
 #define C64MENU_QUIT_OFFSET C64SID_END_OFFSET  // word: counts Q presses
 #define C64MENU_END_OFFSET (C64MENU_QUIT_OFFSET + 2)
 
+// Word: a number the RP picks at each boot, never 0 (c64menu_publishBootId).
+// The ST viewer notes it at its start; when it changes, the RP has restarted
+// (SELECT) and the viewer resets the ST into the setup menu.
+#define C64MENU_BOOT_ID_OFFSET C64MENU_END_OFFSET
+#define C64MENU_WINDOW_END_OFFSET (C64MENU_BOOT_ID_OFFSET + 2)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// Core 0, at boot, once the cartridge image is in the window: put a new
+// boot number at C64MENU_BOOT_ID_OFFSET.
+void c64menu_publishBootId(void);
 
 // Core 0: publish the quit counter. Call once at start.
 void c64menu_init(void);

@@ -653,6 +653,10 @@ void emul_start() {
   }
 #endif
 
+  // A new boot number, before the ST can read the window: a C64 viewer left
+  // running on the ST sees it change and resets the ST into the menu.
+  c64menu_publishBootId();
+
   // Initialize the cartridge ROM4 read engine. ROM4 reads are served entirely
   // by chained DMAs feeding the PIO TX FIFO — no CPU/IRQ involvement.
   // Without this engine the cartridge image is unreadable from the m68k,
