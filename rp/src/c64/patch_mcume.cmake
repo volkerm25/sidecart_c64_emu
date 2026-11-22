@@ -49,6 +49,12 @@
 # across the screen (clouds drifting right in Pole Position II's bends).
 # Drawing now stops at the end of the buffer; at most the last 3 of the
 # 320 visible pixels of a sprite at the right edge are lost.
+# Also in vic.cpp: the raster compare. pico64 compared only at the start
+# of a line, so an interrupt handler that set $D012 (or bit 8 in $D011) to
+# the line already running got its interrupt a frame late. A VIC raises it
+# at once when the compare value changes to the current line. Games with
+# many splits per frame lost splits whenever a handler ran long (Lemmings'
+# sprite text showed the wrong rows).
 #
 # cia2.cpp: the serial bus lines. Off the Teensy READ_CLK_DATA() is 0, so
 # CLK and DATA always read low, as if a device held them: the KERNAL took any
@@ -166,6 +172,14 @@ mcume_replace(
 mcume_replace(
     "for (unsigned cnt = 0; (spriteData > 0) && (cnt < 24); cnt++) {"
     "for (unsigned cnt = 0; (spriteData > 0) && (cnt < 24) && (slp + 4 <= slpEnd); cnt++) {")
+
+# Raster compare written to the current line: interrupt at once.
+mcume_replace(
+    "      cpu.vic.intRasterLine = (cpu.vic.intRasterLine & 0xff) | ((((uint16_t) value) << 1) & 0x100);\n"
+    "      {\n        uint16_t oldCompare = cpu.vic.intRasterLine;\n        cpu.vic.intRasterLine = (cpu.vic.intRasterLine & 0xff) | ((((uint16_t) value) << 1) & 0x100);\n        if (cpu.vic.intRasterLine != oldCompare && cpu.vic.rasterLine == cpu.vic.intRasterLine) cpu.vic.R[0x19] |= 1 | ((cpu.vic.R[0x1a] & 1) << 7); // compare met at once\n      }\n")
+mcume_replace(
+    "      cpu.vic.intRasterLine = (cpu.vic.intRasterLine & 0x100) | value;\n"
+    "      {\n        uint16_t oldCompare = cpu.vic.intRasterLine;\n        cpu.vic.intRasterLine = (cpu.vic.intRasterLine & 0x100) | value;\n        if (cpu.vic.intRasterLine != oldCompare && cpu.vic.rasterLine == cpu.vic.intRasterLine) cpu.vic.R[0x19] |= 1 | ((cpu.vic.R[0x1a] & 1) << 7); // compare met at once\n      }\n")
 
 # ECM + BMM: address bits 9 and 10 cleared in the C64 address, not the
 # pointer.
