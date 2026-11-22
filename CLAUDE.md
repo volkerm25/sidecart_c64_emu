@@ -10,7 +10,7 @@ This repository started from `md-microfirmware-template` (remote `template`, mer
 
 - Architecture, risks and the phase plan: `docs/ARCHITEKTUR.md` (German). Unlike the template's local backlog (`docs/epics/`, gitignored), design documents directly under `docs/` are tracked and may be referenced.
 - Project agents in `.claude/agents/`: `mcume-expert` (C64 core, porting, performance), `sidecartridge-md-expert` (this template, protocol, PIO/DMA), `atari-st-expert` (68000, ST hardware), `static-analysis-expert` (static analysis and optimisation of the C/C++ code).
-- Local toolchain on the main dev machine: `PICO_TOOLCHAIN_PATH=$HOME/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin`, `stcmd` in `~/.local/bin`. Dev build: `./build.sh pico_w debug 44444444-4444-4444-8444-444444444444`.
+- Local toolchain on the main dev machine: `PICO_TOOLCHAIN_PATH=$HOME/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin`, `stcmd` in `~/.local/bin`. Dev build: `make deploy` (a release build with the development UUID `44444444-4444-4444-8444-444444444444`; a debug build leaves less flash for cartridges).
 - The rest of this file is the template's guidance and still applies.
 
 ## What this repo is

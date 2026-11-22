@@ -12,12 +12,17 @@ tag:
 ## Override the host with: make deploy DEVICE=192.168.1.50
 DEVICE ?= sidecart.local
 DEV_UUID = 44444444-4444-4444-8444-444444444444
-BUILD_TYPE ?= debug
+# Release: the debug build adds only the serial console and the SWD tools,
+# and its larger code leaves less flash for cartridges.
+BUILD_TYPE ?= release
 PICO_TOOLCHAIN_PATH ?= $(HOME)/opt/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi/bin
 DEV_UF2 = dist/$(DEV_UUID)-$(VERSION).uf2
 # Optional system clock / core voltage override, e.g.
 #   make deploy RP_CLOCK_KHZ=250000 RP_VOLTAGE=VREG_VOLTAGE_1_15
 # C64_ROMS_IN_RAM=1 serves BASIC and KERNAL from RAM instead of flash.
+# The emulator needs 250 MHz; 1.15 V keeps it stable there.
+RP_CLOCK_KHZ ?= 250000
+RP_VOLTAGE ?= VREG_VOLTAGE_1_15
 export RP_CLOCK_KHZ RP_VOLTAGE C64_ROMS_IN_RAM
 
 ## Release build of the app itself: its UUID, the clock and voltage the
