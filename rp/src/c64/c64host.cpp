@@ -309,7 +309,11 @@ extern "C" bool c64host_writeDump(const char *path) {
   memcpy(&header[164], &lineCycles, 2);
   c64cart_getDumpInfo(&header[168]);
   uint8_t cartRam[256];
-  memset(cartRam, 0xFF, sizeof(cartRam));  // no cartridge has RAM yet
+  if (c64cart_io2Ram != NULL) {
+    memcpy(cartRam, c64cart_io2Ram, sizeof(cartRam));
+  } else {
+    memset(cartRam, 0xFF, sizeof(cartRam));
+  }
   FIL file;
   UINT written = 0;
   bool ok = f_open(&file, path, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK;

@@ -70,9 +70,11 @@
 # PLA does. In Ultimax mode writes use the map with I/O for every port
 # value. ROML and ROMH read through c64cart's bank pointers, and I/O 1
 # ($DE00) and I/O 2 ($DF00) tell c64cart about accesses (bank registers);
-# what is read there and that writes land in RAM is unchanged. In Ultimax
-# mode they read 0; they now read that RAM too, which serves as EasyFlash's
-# RAM at $DF00 (its boot code runs in Ultimax mode).
+# what is read there and that writes land in RAM is unchanged. A cartridge
+# with RAM at I/O 2 (EasyFlash) gets those accesses instead, apart from the
+# C64's RAM under the I/O area, which games use for graphics. In Ultimax
+# mode I/O 1/2 read 0; they now read as in the other modes (EasyFlash's boot
+# code runs in Ultimax mode and uses its RAM).
 
 file(READ "${MCUME_SOURCE}" source)
 get_filename_component(name "${MCUME_SOURCE}" NAME)
@@ -201,13 +203,13 @@ mcume_replace(
 # I/O 1 and I/O 2: reads and writes as before, and c64cart sees them.
 mcume_replace(
     "void w_cia2( uint32_t address, uint8_t value )\t{ cia2_write(address, value); }\n"
-    "void w_cia2( uint32_t address, uint8_t value )\t{ cia2_write(address, value); }\nuint8_t r_io1(uint32_t address)\t{ c64cart_io1Read(address); return cpu.RAM[address]; }\nvoid w_io1( uint32_t address, uint8_t value )\t{ cpu.RAM[address] = value; c64cart_io1Write(address, value); }\nvoid w_io2( uint32_t address, uint8_t value )\t{ cpu.RAM[address] = value; c64cart_io2Write(address, value); }\n")
+    "void w_cia2( uint32_t address, uint8_t value )\t{ cia2_write(address, value); }\nuint8_t r_io1(uint32_t address)\t{ c64cart_io1Read(address); return cpu.RAM[address]; }\nvoid w_io1( uint32_t address, uint8_t value )\t{ cpu.RAM[address] = value; c64cart_io1Write(address, value); }\nvoid w_io2( uint32_t address, uint8_t value )\t{ if (c64cart_io2Ram) { c64cart_io2Ram[address & 0xFF] = value; return; } cpu.RAM[address] = value; c64cart_io2Write(address, value); }\nuint8_t r_io2(uint32_t address)\t{ return c64cart_io2Ram ? c64cart_io2Ram[address & 0xFF] : cpu.RAM[address]; }\n")
 mcume_replace(
     "r_cia1, r_cia2, r_ram,  r_ram,"
-    "r_cia1, r_cia2, r_io1,  r_ram,")
+    "r_cia1, r_cia2, r_io1,  r_io2,")
 mcume_replace(
     "r_cia1, r_cia2, r_nul/*?*/,  r_nul/*?*/,"
-    "r_cia1, r_cia2, r_io1,  r_ram,")
+    "r_cia1, r_cia2, r_io1,  r_io2,")
 mcume_replace(
     "w_cia1, w_cia2, w_ram,  w_ram,"
     "w_cia1, w_cia2, w_io1,  w_io2,")

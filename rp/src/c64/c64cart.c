@@ -82,6 +82,12 @@ static_assert(DESCRIPTOR_SIZE + DATA_SIZE <= 516u * 1024u,
 // them out of .data.
 const uint8_t *c64cart_roml;
 const uint8_t *c64cart_romh;
+uint8_t *c64cart_io2Ram;
+
+// EasyFlash's RAM at $DF00, apart from the C64's RAM under the I/O area,
+// which games use for graphics. Cleared when the cartridge is inserted; a
+// reset keeps it, as on the hardware.
+static uint8_t easyFlashRam[256];
 
 static Cartridge cart;
 static bool inserted;
@@ -112,7 +118,9 @@ void c64cart_getDumpInfo(uint8_t *info) {
 
 void c64cart_reset(void) {
   lastMode = 0;
+  c64cart_io2Ram = NULL;
   if (!inserted) return;  // resetPLA left the lines inactive
+  if (cart.type == TYPE_EASYFLASH) c64cart_io2Ram = easyFlashRam;
   superGamesLocked = false;
   selectBank(0);
   pla_setCartridgeLines(cart.game, cart.exrom);
@@ -143,7 +151,7 @@ static void setEasyFlashMode(uint8_t value) {
 
 void c64cart_io1Write(uint32_t address, uint8_t value) {
   if (!inserted) return;
-  lastMode = value;
+  if (cart.type != TYPE_EASYFLASH) lastMode = value;  // EasyFlash: $DE02 only
   switch (cart.type) {
     case TYPE_OCEAN:
       selectBank(value & 0x3F);
@@ -167,6 +175,7 @@ void c64cart_io1Write(uint32_t address, uint8_t value) {
       if ((address & 0x02) == 0) {  // $DE00: bank
         selectBank(value & 0x3F);
       } else {  // $DE02: mode
+        lastMode = value;
         setEasyFlashMode(value);
       }
       break;
@@ -434,6 +443,7 @@ const char *c64cart_insert(const char *name, uint8_t *scratch,
   const char *error = loadCartridge(&file, &info, name, scratch);
   f_close(&file);
   if (error) return error;
+  memset(easyFlashRam, 0, sizeof(easyFlashRam));
   inserted = true;
   return NULL;
 }
