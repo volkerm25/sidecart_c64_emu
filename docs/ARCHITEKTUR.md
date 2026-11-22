@@ -313,11 +313,16 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
   - `w_ramz` wählte immer die Tabellen ohne Modul; jetzt Kartensatz je GAME/EXROM.
   - pico64s Modultabellen sind für die Port-Werte 1, 4 und 5 falsch und werden dort durch die richtigen Tabellen ersetzt.
   - I/O 1/2 melden Zugriffe an `c64cart` (Bankregister).
-- EasyFlash (32), gebaut 2026-11-18, auf dem Gerät nur teilweise lauffähig (Branch `easyflash`, nicht in `main`):
-  - Beobachtet: Manche Module starten nicht; bei Outrun reagiert der Joystick nicht. Ursache offen.
+- EasyFlash (32), gebaut 2026-11-18 (Branch `easyflash`, nicht in `main`). Stand 2026-11-22:
+  - Out Run Europa: läuft. Es fragt den Joystick nur in Port 1 ab (`$DC01`), also mit F9.
+  - Ghostbusters II: läuft. Drei Fehler im Kern hielten es auf, behoben in `main` (alle Spiele betroffen):
+    - Blindlesezugriff indizierter Lesebefehle beim Seitenwechsel fehlte (`CMP $DC8E,X` quittiert beide CIAs).
+    - VIC-Zeiger im ungültigen Bitmap-Modus (ECM+BMM) zeigte ins Leere; HardFault auf core 1.
+    - Die LOAD-Falle ignorierte einen umgebogenen LOAD-Vektor `$0330`.
+  - Weitere Module noch nicht getestet.
   - Nur lesend, bis 512 KB (32 Bänke ROML+ROMH). Leere Chips (`$FF`) oberhalb von 512 KB werden übersprungen; viele EasyFlash-CRTs sind damit auf 1 MB aufgefüllt.
   - Start im Ultimax-Modus mit Bank 0. `$DE00` wählt die Bank, `$DE02` den Modus (Boot-Jumper gesetzt).
-  - Die 256 Byte RAM bei `$DF00` sind das C64-RAM, das pico64 dort für I/O 2 ohnehin hält. Im Ultimax-Modus lieferten Lesezugriffe auf I/O 1/2 bisher 0; jetzt liefern sie dieses RAM.
+  - Eigene 256 Byte RAM bei `$DF00` (`c64cart_io2Ram`), getrennt vom C64-RAM unter dem I/O-Bereich, das Spiele für Grafik nutzen. Im Ultimax-Modus lieferten Lesezugriffe auf I/O 1/2 bisher 0; jetzt lesen sie wie in den anderen Modi.
 - Nicht unterstützt: Ultimax-Grafik (der VIC sieht das Modul-ROM nicht), EasyFlash schreiben (EAPI), Freezer.
 - Host-Test des CRT-Parsers mit synthetischen Dateien aller Typen: Bänke, Spiegelung, Abschalten, Sperrbit bestanden.
 - Vorsicht RAM: `.data` endet 72 Bytes unter 0x20004000. Darüber rückt `.bss` wegen des 16-KB-ausgerichteten `commRing` um 16 KB nach oben, und der Link scheitert mit „region RAM overflowed“. Neue Variablen deshalb nicht initialisieren.
