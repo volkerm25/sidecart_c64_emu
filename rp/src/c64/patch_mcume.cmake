@@ -26,6 +26,13 @@
 # IRQs that acknowledged a collision while a raster IRQ was pending lost
 # that IRQ, and since the raster flag stayed set, every later one too: the
 # game hung waiting for it. Bit 7 is now (flags & mask) != 0, as on a VIC.
+# Also in vic.cpp: with ECM and BMM both set (the invalid bitmap modes games
+# use to blank the screen) the VIC's address bits 9 and 10 are 0. pico64
+# cleared them in the RP2040's pointer to the bitmap instead of in the C64
+# address, which left a pointer to unmapped memory; the first line with a
+# sprite in that mode read through it, and core 1 took a HardFault and
+# locked up (Ghostbusters II, EasyFlash). The bits are now cleared in the
+# C64 address.
 #
 # cia2.cpp: the serial bus lines. Off the Teensy READ_CLK_DATA() is 0, so
 # CLK and DATA always read low, as if a device held them: the KERNAL took any
@@ -120,6 +127,12 @@ mcume_replace(
 mcume_replace(
     "    case 0x1A : //IRQ Mask\n      cpu.vic.R[address] = value & 0x0f;\n      break;"
     "    case 0x1A : //IRQ Mask\n      cpu.vic.R[address] = value & 0x0f;\n      if (cpu.vic.R[0x19] & cpu.vic.R[0x1a] & 0x0f) cpu.vic.R[0x19] |= 0x80;\n      else cpu.vic.R[0x19] &= 0x7f;\n      break;")
+
+# ECM + BMM: address bits 9 and 10 cleared in the C64 address, not the
+# pointer.
+mcume_replace(
+    "  if ((cpu.vic.R[0x11] & 0x60) == 0x60)  cpu.vic.bitmapPtr = (uint8_t*)((uintptr_t)cpu.vic.bitmapPtr & 0xf9ff);"
+    "  if ((cpu.vic.R[0x11] & 0x60) == 0x60)  cpu.vic.bitmapPtr = (uint8_t*) &cpu.RAM[(cpu.vic.bank | ((r18 & 0x08) * 0x400)) & 0xf9ff];")
 
 elseif(name STREQUAL "cia2.cpp")
 
