@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.3.0 (2026-11-22) - release
+
+EasyFlash cartridges, and four fixes to the C64 core that let games run
+that hung or showed garbage.
+
+### Cartridges
+
+- **EasyFlash** cartridges up to 512 KB, read only: they start in Ultimax
+  mode with bank 0, $DE00 selects the bank, $DE02 the mode, and their
+  256 bytes of RAM at $DF00 are their own, apart from the C64's RAM
+  under the I/O area. CRTs padded to 1 MB with empty banks load as long
+  as their contents fit in 512 KB. Games that save to the cartridge
+  cannot keep what they save.
+
+### Fixes to the C64 core
+
+- Indexed reads that cross a page make the 6510's dummy read first, so
+  `CMP $DC8E,X` acknowledges both CIAs (Ghostbusters II no longer hangs
+  at its start).
+- In the invalid bitmap modes (ECM and BMM, used to blank the screen)
+  the VIC no longer reads through a broken pointer, which crashed the
+  emulator as soon as a sprite showed in such a line (Ghostbusters II
+  hung on a black screen).
+- A sprite at the right border no longer overwrites the characters of
+  the text row it is drawn on (a band of garbage characters across the
+  sky in Pole Position II's bends).
+- LOAD goes through its vector when a program has pointed it at its own
+  loader, as cartridges and fast loaders do, even with a disk image in
+  drive 8.
+
+### Diagnosis
+
+- The state dump (keypad `)`) says whether the emulator itself still
+  runs, what it last waited for, and where it crashed if it did; it also
+  holds the cartridge's state and RAM. `tools/dev/c64dump.py` shows it.
+
 ## v0.2.0 (2026-11-18) - release
 
 The firmware no longer contains Commodore's ROMs: they come from the SD

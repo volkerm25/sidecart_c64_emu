@@ -55,7 +55,8 @@ that the C64 runs even without them on the card.
   bytes.
 - **Cartridges:** CRT files up to 512 KB of these types: normal 8 KB,
   16 KB and Ultimax, Ocean, Fun Play, Super Games, C64 Game System /
-  System 3, Dinamic, Magic Desk. EasyFlash is not supported yet.
+  System 3, Dinamic, Magic Desk, EasyFlash. EasyFlash CRTs padded to 1 MB
+  with empty banks work too, as long as their contents fit in 512 KB.
 
 ## Using it
 
@@ -132,7 +133,8 @@ also counts as fire.
   their own fast loader, or talk to the drive directly, do not load.
 - **Saving.** SAVE to disk does not work, so games cannot store high
   scores or save games on disk.
-- **EasyFlash cartridges.**
+- **Saving to EasyFlash cartridges.** Their flash is read only here, so
+  games that keep high scores or save games on the cartridge lose them.
 - **The picture:** the C64's border is cut off (the ST's border shows its
   colour), and sprites in the side borders are not shown.
 - **The sound** is the SID played on the YM2149: three voices, noise and

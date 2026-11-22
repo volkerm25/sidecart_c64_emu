@@ -313,7 +313,7 @@ Phase 1 entscheidet über Go oder No-Go. Ab Phase 2 endet jede Phase mit einem s
   - `w_ramz` wählte immer die Tabellen ohne Modul; jetzt Kartensatz je GAME/EXROM.
   - pico64s Modultabellen sind für die Port-Werte 1, 4 und 5 falsch und werden dort durch die richtigen Tabellen ersetzt.
   - I/O 1/2 melden Zugriffe an `c64cart` (Bankregister).
-- EasyFlash (32), gebaut 2026-11-18 (Branch `easyflash`, nicht in `main`). Stand 2026-11-22:
+- EasyFlash (32), gebaut 2026-11-18, seit 2026-11-22 in `main` (v0.3.0). Stand 2026-11-22:
   - Out Run Europa: läuft. Es fragt den Joystick nur in Port 1 ab (`$DC01`), also mit F9.
   - Ghostbusters II: läuft. Drei Fehler im Kern hielten es auf, behoben in `main` (alle Spiele betroffen):
     - Blindlesezugriff indizierter Lesebefehle beim Seitenwechsel fehlte (`CMP $DC8E,X` quittiert beide CIAs).
