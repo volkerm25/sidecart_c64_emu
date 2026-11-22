@@ -85,6 +85,7 @@ const uint8_t *c64cart_romh;
 static Cartridge cart;
 static bool inserted;
 static bool superGamesLocked;  // bit 3 of $DF00 locks it until a reset
+static uint8_t lastMode;       // for the dump: the last register value
 static char errorText[41];
 
 // ---------------------------------------------------------------------------
@@ -97,7 +98,19 @@ static void selectBank(unsigned bank) {
   c64cart_romh = roml + cart.romhOffset;
 }
 
+void c64cart_getDumpInfo(uint8_t *info) {
+  memset(info, 0, 16);
+  uint16_t type = inserted ? cart.type : 0xFFFF;
+  info[0] = (uint8_t)type;
+  info[1] = (uint8_t)(type >> 8);
+  if (inserted && cart.stride != 0 && c64cart_roml != NULL) {
+    info[2] = (uint8_t)((uint32_t)(c64cart_roml - DATA_START) / cart.stride);
+  }
+  info[3] = lastMode;
+}
+
 void c64cart_reset(void) {
+  lastMode = 0;
   if (!inserted) return;  // resetPLA left the lines inactive
   superGamesLocked = false;
   selectBank(0);
@@ -120,6 +133,7 @@ void c64cart_io1Read(uint32_t address) {
 
 void c64cart_io1Write(uint32_t address, uint8_t value) {
   if (!inserted) return;
+  lastMode = value;
   switch (cart.type) {
     case TYPE_OCEAN:
       selectBank(value & 0x3F);
@@ -147,6 +161,7 @@ void c64cart_io1Write(uint32_t address, uint8_t value) {
 void c64cart_io2Write(uint32_t address, uint8_t value) {
   (void)address;
   if (!inserted || cart.type != TYPE_SUPERGAMES || superGamesLocked) return;
+  lastMode = value;
   // Bits 1-0 bank, bit 2 switches the ROM off, bit 3 locks the register.
   selectBank(value & 0x03);
   if (value & 0x04) {

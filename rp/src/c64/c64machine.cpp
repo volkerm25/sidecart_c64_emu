@@ -147,9 +147,11 @@ void patchLOAD(void) {
   uint16_t namePtr = cpu.RAM[0xBB] | (cpu.RAM[0xBC] << 8);
   uint16_t end = 0;
   uint8_t status = 0;
+  c64host_setCore1Where(C64HOST_WHERE_DRIVE);
   int err = c64drive_load(&cpu.RAM[namePtr], cpu.RAM[0xB7], cpu.RAM[0xB9],
                           (uint16_t)(cpu.x | (cpu.y << 8)), cpu.a != 0, &end,
                           &status);
+  c64host_setCore1Where(C64HOST_WHERE_EMULATING);
   if (err != 0) {
     cpu.pc = KERNAL_ERROR_1 + 3 * (err - 1);
     return;

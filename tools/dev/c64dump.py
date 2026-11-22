@@ -6,6 +6,8 @@ and show the 6510's state, the I/O registers and disassembled memory.
   c64dump.py c64dump.bin dis 0801 40     disassemble 40 instructions at $0801
   c64dump.py c64dump.bin hex c000 100    hex dump of $100 bytes at $C000
   c64dump.py c64dump.bin find 20d5ff     addresses where the bytes occur
+  c64dump.py c64dump.bin cartram [df00 40]  disassemble the cartridge's RAM
+                                         at $DF00 (EasyFlash), newer dumps
   c64dump.py c64dump.bin ram out.bin     the 64 KB of RAM as a raw file
 
 Memory is the RAM as the dump holds it: where ROM or I/O is banked in, the
@@ -86,9 +88,33 @@ def disassemble(ram, addr, count):
 
 def load(path):
     data = open(path, "rb").read()
-    if data[:8] != b"C64DUMP1":
+    if data[:8] not in (b"C64DUMP1", b"C64DUMP2"):
         sys.exit("%s: not a C64 dump" % path)
     return data[:HEADER], bytearray(data[HEADER:HEADER + RAM_SIZE])
+
+
+def cart_ram(path):
+    """The cartridge's RAM at I/O 2 ($DF00), or None (older dumps, none)."""
+    data = open(path, "rb").read()
+    offset = HEADER + RAM_SIZE + 1024
+    if data[:8] != b"C64DUMP2" or len(data) < offset + 256:
+        return None
+    return bytearray(data[offset:offset + 256])
+
+
+def crash_record(path):
+    """fatfs-sdk's HardFault record from the RAM a reset keeps, or None."""
+    data = open(path, "rb").read()
+    offset = HEADER + RAM_SIZE + 1024 + 256
+    kept = data[offset:offset + 256]
+    for at in range(0, len(kept) - 48, 4):
+        if struct.unpack_from("<I", kept, at)[0] == 0xCAFEBABE:
+            names = ("r0", "r1", "r2", "r3", "r12", "lr", "pc", "psr")
+            return dict(zip(names, struct.unpack_from("<8I", kept, at + 16)))
+    return None
+
+
+WHERE = ["emulating", "video hand-over", "frame pacing", "paused", "drive LOAD"]
 
 
 def show_state(header, ram):
@@ -101,6 +127,28 @@ def show_state(header, ram):
     print("PC %04X  A %02X  X %02X  Y %02X  SP %02X  P %s  $01 %02X" %
           (pc, a, x, y, sp, flags, port))
     print("frame %d, raster line %d, raster IRQ line %d" % (frames, raster, raster_irq))
+    if header[:8] == b"C64DUMP2":
+        lines, cycles = struct.unpack_from("<IH", header, 160)
+        where = header[153]
+        print("core 1 %s, last waiting for: %s; %d raster lines, %d cycles into "
+              "the line; exact timing %s" %
+              ("answered the pause" if header[152] else "DID NOT answer the pause",
+               WHERE[where] if where < len(WHERE) else "?%d" % where, lines,
+              cycles, "on" if header[154] else "off"))
+        crash = crash_record(sys.argv[1])
+        if crash:
+            print("HardFault recorded: pc %08X lr %08X r0 %08X r1 %08X r2 %08X "
+                  "r3 %08X r12 %08X psr %08X" % (crash["pc"], crash["lr"], crash["r0"],
+                  crash["r1"], crash["r2"], crash["r3"], crash["r12"], crash["psr"]))
+            print("  (addr2line -f -e rp/build/rp.elf %08X %08X, with the ELF of the "
+                  "build that wrote the dump)" % (crash["pc"], crash["lr"]))
+        cart_type = header[168] | header[169] << 8
+        if cart_type == 0xFFFF:
+            print("cartridge: none (GAME %d EXROM %d)" % (header[155], header[156]))
+        else:
+            print("cartridge: CRT type %d, ROML bank %d, last mode register $%02X, "
+                  "GAME %d EXROM %d" % (cart_type, header[170], header[171],
+                                       header[155], header[156]))
     print("VIC  $D011 %02X  $D016 %02X  $D018 %02X  $D019 %02X  $D01A %02X  "
           "$D020 %02X  $D021 %02X" % (vic[0x11], vic[0x16], vic[0x18], vic[0x19],
                                       vic[0x1A], vic[0x20], vic[0x21]))
@@ -136,6 +184,13 @@ def main():
             row = bytes(ram[(start + off + i) & 0xFFFF] for i in range(16))
             print("%04X  %s  %s" % ((start + off) & 0xFFFF, row.hex(" "),
                                     "".join(chr(c) if 32 <= c < 127 else "." for c in row)))
+    elif cmd == "cartram":
+        data = cart_ram(sys.argv[1])
+        if data is None:
+            sys.exit("no cartridge RAM in this dump")
+        ram[0xDF00:0xE000] = data
+        print(disassemble(ram, int(sys.argv[3], 16) if len(sys.argv) > 3 else 0xDF00,
+                          int(sys.argv[4]) if len(sys.argv) > 4 else 40))
     elif cmd == "find":
         needle = bytes.fromhex(sys.argv[3])
         at = ram.find(needle)

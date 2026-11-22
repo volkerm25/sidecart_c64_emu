@@ -200,7 +200,9 @@ SECTIONS
 
     .uninitialized_data (NOLOAD): {
         . = ALIGN(4);
+        __uninitialized_data_start__ = .;
         *(.uninitialized_data*)
+        __uninitialized_data_end__ = .;
     } > RAM
 
     /* Start and end symbols must be word-aligned */

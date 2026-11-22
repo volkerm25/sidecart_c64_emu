@@ -75,6 +75,16 @@ void c64host_removeCartridge(void);
 // colour RAM; layout in c64host.cpp) to path on the SD card, let it run on.
 bool c64host_writeDump(const char *path);
 
+// What core 1 last started waiting for, recorded in the dump.
+#define C64HOST_WHERE_EMULATING 0  // in the C64 core
+#define C64HOST_WHERE_VIDEO 1      // handing a line or a frame to core 0
+#define C64HOST_WHERE_PACING 2     // waiting for the next frame's time
+#define C64HOST_WHERE_PAUSED 3     // held by core 0
+#define C64HOST_WHERE_DRIVE 4      // a LOAD waiting for core 0
+
+// Core 1: record what it waits for next (C64HOST_WHERE_*).
+void c64host_setCore1Where(uint8_t where);
+
 // Core 1, from the LOAD trap: a LOAD from drive 8 succeeded.
 void c64host_loadDone(void);
 

@@ -43,6 +43,11 @@ void c64cart_remove(void);
 // The inserted cartridge's file name, or NULL.
 const char *c64cart_insertedName(void);
 
+// Core 0, for the dump: 16 bytes. 0-1 hardware type (0xFFFF without a
+// cartridge), 2 the ROML bank, 3 the last value written to a bank or mode
+// register, 4-15 free.
+void c64cart_getDumpInfo(uint8_t *info);
+
 // Core 1, from the C64's reset: cartridge lines and banks as at power-on.
 void c64cart_reset(void);
 

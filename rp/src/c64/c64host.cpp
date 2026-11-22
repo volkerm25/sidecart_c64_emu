@@ -34,6 +34,10 @@ extern "C" {
 
 // Written by core 1 only, read by core 0.
 static volatile bool hostRunning = false;
+// For the dump: what core 1 last started waiting for (C64HOST_WHERE_*), and
+// how many raster lines it has emulated.
+static volatile uint8_t core1Where;
+static volatile uint32_t rasterLines;
 static volatile uint32_t frameCount = 0;
 static volatile uint32_t lastWindowUs = 0;
 static volatile uint32_t busyWindowUs = 0;
@@ -82,7 +86,9 @@ extern "C" void emu_DrawLine16(unsigned short *VBuf, int width, int height,
   int displayLine = line - C64HOST_TOP_BORDER_LINES;
   if (displayLine >= 0 && displayLine < C64VIDEO_LINES) {
     uint32_t start = time_us_32();
+    core1Where = C64HOST_WHERE_VIDEO;
     c64video_line(displayLine, VBuf);
+    core1Where = C64HOST_WHERE_EMULATING;
     videoUs += time_us_32() - start;
   }
 }
@@ -91,7 +97,9 @@ extern "C" void emu_DrawLine16(unsigned short *VBuf, int width, int height,
 // frame's 19,950 us are up. A core that falls more than a frame behind
 // starts afresh instead of racing to catch up.
 extern "C" void emu_DrawVsync(void) {
+  core1Where = C64HOST_WHERE_VIDEO;
   c64video_frameEnd(cpu.vic.R[0x20]);
+  core1Where = C64HOST_WHERE_EMULATING;
   c64sid_frame();
   if (c64input_restorePressed) {
     c64input_restorePressed = false;
@@ -119,6 +127,7 @@ extern "C" void emu_DrawVsync(void) {
   if ((int32_t)(nextFrameUs - now) < -(int32_t)C64HOST_FRAME_US) {
     nextFrameUs = now;
   }
+  core1Where = C64HOST_WHERE_PACING;
   while ((int32_t)(nextFrameUs - time_us_32()) > 0) {
     tight_loop_contents();
   }
@@ -185,6 +194,8 @@ static void resetC64(void) {
 }
 
 // Called from the LOAD trap (core 1) when a LOAD from drive 8 succeeded.
+extern "C" void c64host_setCore1Where(uint8_t where) { core1Where = where; }
+
 extern "C" void c64host_loadDone(void) {
   if (autostart == AUTOSTART_WAIT_LOAD) {
     typeKeys(autostartRun, sizeof(autostartRun));
@@ -199,8 +210,11 @@ static void core1Main(void) {
   nextFrameUs = windowStartUs;
   hostRunning = true;
   while (true) {
+    core1Where = C64HOST_WHERE_EMULATING;
     c64_Step();  // one raster line
+    rasterLines = rasterLines + 1;
     if (pauseRequested) {
+      core1Where = C64HOST_WHERE_PAUSED;
       pausedNow = true;
       while (pauseRequested) {
         tight_loop_contents();
@@ -243,15 +257,28 @@ extern "C" void c64host_setPaused(bool paused) {
 //   80  CIA1 read registers (16), written registers (16)
 //   112 CIA2 read registers (16), written registers (16)
 //   144 raster line (2), raster IRQ line (2), frame count (4)
+//   152 core 1 answered the pause (1), what it last waited for
+//       (C64HOST_WHERE_*, 1), the core's exact timing flag (1), GAME (1),
+//       EXROM (1), 3 bytes free
+//   160 raster lines emulated (4), cycles into the line (2), 2 bytes free
+//   168 cartridge (c64cart_getDumpInfo, 16)
 //   256 RAM (65536)
 //   65792 colour RAM (1024)
+//   66816 cartridge RAM at I/O 2 (256; $FF without one)
+//   67072 the RAM a reset keeps (.uninitialized_data, 256, the rest $FF):
+//         fatfs-sdk's crash record, where a HardFault on core 1 leaves its
+//         registers before the core locks up
 #define DUMP_HEADER_SIZE 256
+
+// The linker script's bounds of .uninitialized_data.
+extern "C" uint8_t __uninitialized_data_start__[];
+extern "C" uint8_t __uninitialized_data_end__[];
 
 extern "C" bool c64host_writeDump(const char *path) {
   uint8_t header[DUMP_HEADER_SIZE];
   memset(header, 0, sizeof(header));
   c64host_setPaused(true);
-  memcpy(header, "C64DUMP1", 8);
+  memcpy(header, "C64DUMP2", 8);
   header[8] = (uint8_t)cpu.pc;
   header[9] = (uint8_t)(cpu.pc >> 8);
   header[10] = cpu.a;
@@ -271,6 +298,18 @@ extern "C" bool c64host_writeDump(const char *path) {
   memcpy(&header[144], &raster, 2);
   memcpy(&header[146], &rasterIrq, 2);
   memcpy(&header[148], &frames, 4);
+  header[152] = pausedNow ? 1 : 0;
+  header[153] = core1Where;
+  header[154] = cpu.exactTiming;
+  header[155] = cpu._game;
+  header[156] = cpu._exrom;
+  uint32_t lines = rasterLines;
+  uint16_t lineCycles = (uint16_t)cpu.lineCycles;
+  memcpy(&header[160], &lines, 4);
+  memcpy(&header[164], &lineCycles, 2);
+  c64cart_getDumpInfo(&header[168]);
+  uint8_t cartRam[256];
+  memset(cartRam, 0xFF, sizeof(cartRam));  // no cartridge has RAM yet
   FIL file;
   UINT written = 0;
   bool ok = f_open(&file, path, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK;
@@ -283,6 +322,16 @@ extern "C" bool c64host_writeDump(const char *path) {
          f_write(&file, cpu.vic.COLORRAM, sizeof(cpu.vic.COLORRAM),
                  &written) == FR_OK &&
          written == sizeof(cpu.vic.COLORRAM);
+    ok = ok && f_write(&file, cartRam, sizeof(cartRam), &written) == FR_OK &&
+         written == sizeof(cartRam);
+    uint8_t kept[256];
+    memset(kept, 0xFF, sizeof(kept));
+    size_t keptSize = (size_t)(__uninitialized_data_end__ -
+                               __uninitialized_data_start__);
+    if (keptSize > sizeof(kept)) keptSize = sizeof(kept);
+    memcpy(kept, __uninitialized_data_start__, keptSize);
+    ok = ok && f_write(&file, kept, sizeof(kept), &written) == FR_OK &&
+         written == sizeof(kept);
     ok = (f_close(&file) == FR_OK) && ok;
   }
   c64host_setPaused(false);

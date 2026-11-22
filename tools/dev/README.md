@@ -290,4 +290,14 @@ python3 tools/dev/c64dump.py c64dump.bin               # state and code at the P
 python3 tools/dev/c64dump.py c64dump.bin dis 0801 40   # disassemble
 python3 tools/dev/c64dump.py c64dump.bin hex c000 100  # hex dump
 python3 tools/dev/c64dump.py c64dump.bin find 20d5ff   # search bytes
+python3 tools/dev/c64dump.py c64dump.bin cartram       # cartridge RAM at $DF00
 ```
+
+The dump also says whether core 1 still runs. When it "did not answer the
+pause", the emulator itself is stuck, not the C64 program: the dump names
+what core 1 last waited for, and a HardFault on core 1 shows up with its
+registers. fatfs-sdk's crash handler records them and then executes a
+breakpoint, which without a debugger locks the core up instead of
+restarting the RP. Look the PC and LR up in the ELF of the build that wrote
+the dump (`arm-none-eabi-addr2line -f -e rp/build/rp.elf <pc> <lr>`); keep a
+copy of that ELF before building again.
