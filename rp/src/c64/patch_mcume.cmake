@@ -19,6 +19,13 @@
 # pending and fired again at once, and the main program never ran on (Great
 # Giana Sisters). The extra write is made for I/O addresses ($D000-$DFFF)
 # only, where it has an effect.
+# Also in cpu.cpp: indexed reads (abs,X, abs,Y, (zp),Y) that cross a page
+# read first from the address whose high byte is not yet fixed, as the 6510
+# does. Programs use that to acknowledge both CIAs with one instruction:
+# CMP $DC8E,X with X = $7F reads $DC0D, then $DD0D. Without it a CIA1
+# interrupt left pending stayed asserted, the CPU went back into the IRQ
+# handler after every RTI, and the main program never ran on (Ghostbusters
+# II, EasyFlash). As for the writes above, only in the I/O area.
 #
 # vic.cpp: the VIC's IRQ bit ($D019 bit 7). Acknowledging any flag cleared
 # it even with another enabled flag still set, and changing the mask
@@ -109,6 +116,17 @@ mcume_replace(
 mcume_replace(
     "\tuint32_t value = getvalue();\n\tuint16_t result = (value >> 1) | ((cpu.cpustatus & FLAG_CARRY) << 7);\n"
     "\tuint32_t value = getvalue();\n\tif ((cpu.ea & 0xF000) == 0xD000) putvalue(value); // 6510 RMW: writes the unchanged value first\n\tuint16_t result = (value >> 1) | ((cpu.cpustatus & FLAG_CARRY) << 7);\n")
+
+# Indexed reads crossing a page: the read before the high byte is fixed.
+mcume_replace(
+    "\tuint16_t h = read6502(cpu.pc) + cpu.x;\n\tif (h & 0x100) cpu.ticks += 1;\n\tcpu.ea = h + (read6502(cpu.pc + 1) << 8);\n"
+    "\tuint16_t h = read6502(cpu.pc) + cpu.x;\n\tuint16_t high = read6502(cpu.pc + 1) << 8;\n\tif (h & 0x100) {\n\t\tcpu.ticks += 1;\n\t\tif ((high & 0xF000) == 0xD000) read6502(high | (h & 0xFF)); // 6510: dummy read before the page is fixed\n\t}\n\tcpu.ea = h + high;\n")
+mcume_replace(
+    "\tuint16_t h = read6502(cpu.pc) + cpu.y;\n\tif (h & 0x100) cpu.ticks += 1;\n\tcpu.ea = h + (read6502(cpu.pc + 1) << 8);\n"
+    "\tuint16_t h = read6502(cpu.pc) + cpu.y;\n\tuint16_t high = read6502(cpu.pc + 1) << 8;\n\tif (h & 0x100) {\n\t\tcpu.ticks += 1;\n\t\tif ((high & 0xF000) == 0xD000) read6502(high | (h & 0xFF)); // 6510: dummy read before the page is fixed\n\t}\n\tcpu.ea = h + high;\n")
+mcume_replace(
+    "\tif (((h + cpu.y) & 0xff) != (h & 0xff)) cpu.ticks += 1;\n\tcpu.ea = h + cpu.y;\n"
+    "\tif (((h + cpu.y) & 0xff) != (h & 0xff)) cpu.ticks += 1;\n\tif (((h & 0xff) + cpu.y) > 0xff && (h & 0xF000) == 0xD000) read6502((h & 0xff00) | ((h + cpu.y) & 0xff)); // 6510: dummy read before the page is fixed\n\tcpu.ea = h + cpu.y;\n")
 
 # $9E SHX abs,Y (was abs,X, and stored nothing): X & (H + 1).
 mcume_replace(
