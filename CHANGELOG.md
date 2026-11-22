@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.4.0 (2026-11-22) - release
+
+Larger cartridges, a raster interrupt fix, and the ST copes with SELECT.
+
+### Before you update
+
+- **Keep the C64 ROMs on the SD card for the first start.** The ROMs and
+  cartridges moved to other places in the flash, so the app copies the
+  ROMs from `/c64/roms` again, and writes a cartridge again when it is
+  inserted.
+
+### Cartridges
+
+- Cartridges may hold up to about 800 KB of contents (512 KB before):
+  the cartridge gets the flash the code leaves. Empty banks take no
+  room. A cartridge that does not fit is refused with the room there is.
+- Lemmings (EasyFlash) now fits and starts, but some of its graphics
+  and texts are still wrong.
+
+### Fixes
+
+- The raster interrupt comes at once when a program sets its line to
+  the one already running, as on a real VIC; games with many splits per
+  frame no longer lose some of them.
+- Starting the C64 no longer leaves the ST clicking: TOS kept repeating
+  the key that started the viewer.
+- A short press on SELECT no longer crashes the ST with bombs. The viewer
+  runs from RAM, notices that the RP has restarted, and resets the ST
+  into the setup menu. It needs about 35 KB of the ST's RAM (33 KB
+  before).
+
 ## v0.3.0 (2026-11-22) - release
 
 EasyFlash cartridges, and four fixes to the C64 core that let games run
