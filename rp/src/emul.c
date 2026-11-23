@@ -715,7 +715,7 @@ void emul_start() {
   static FATFS fsys;
   SettingsConfigEntry *folder =
       settings_find_entry(aconfig_getContext(), ACONFIG_PARAM_FOLDER);
-  char *folderName = "/test";  // MODIFY THIS TO YOUR FOLDER NAME
+  char *folderName = C64DRIVE_FOLDER;
   if (folder == NULL) {
     DPRINTF("FOLDER not found in the configuration. Using default value\n");
   } else {
@@ -728,6 +728,10 @@ void emul_start() {
             sdcardErr);
   } else {
     DPRINTF("SD card found & initialized\n");
+    // The disk images and the ROMs live here whatever FOLDER says, so a new
+    // card gets both folders on the first start.
+    sdcard_ensureFolder(C64DRIVE_FOLDER);
+    sdcard_ensureFolder(C64ROMS_FOLDER);
   }
 
   // Initialize the display again (in case the terminal emulator changed it)
