@@ -1,7 +1,7 @@
 {
   "uuid": "<APP_UUID>",
   "name": "C64 Emulator",
-  "description": "Commodore 64 emulator: the RP2040 runs the C64, the Atari ST shows the picture, plays the sound on its YM2149 and supplies keyboard and joysticks. D64/D81 disks and CRT cartridges from the SD card.",
+  "description": "Commodore 64 emulator: the RP2040 runs the C64, the Atari ST shows the picture, plays the sound on its YM2149 and supplies keyboard and joysticks. D64/D81 disks and CRT cartridges from the SD card. <a target='_blank' href='https://github.com/volkerm25/sidecart_c64_emu#what-you-need'>Learn more</a>",
   "image": "https://raw.githubusercontent.com/volkerm25/sidecart_c64_emu/main/icon.png",
   "tags": [
     "Emulator",

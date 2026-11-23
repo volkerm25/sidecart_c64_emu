@@ -24,7 +24,21 @@ but not all; the [limits](#what-does-not-work-yet) below say why.
 
 ## Installation
 
-The app is not in the Booster's app store yet; install it by hand:
+The app is in the **Testing** channel of the
+[SidecarTridge Microfirmware Store](https://md-store.sidecartridge.com/?channel=test#atari-st/a801bcb1-6755-44f4-8d6d-922b7699976f).
+To install it from the Booster:
+
+1. Open the Booster's web page and go to **Config**. Set **Apps catalog
+   URL** to **Testing - unstable releases** and click **Save**.
+2. In **Apps**, find **C64 Emulator** and click **Download**.
+3. Copy the three ROM files to the folder `/c64/roms` of the SD card.
+   VICE's names (`basic-901226-01.bin`, `kernal-901227-03.bin`,
+   `chargen-901225-01.bin`) work too. The app creates `/c64` and
+   `/c64/roms` at its first start if they are missing, so you can also
+   launch it once and then copy the ROMs.
+4. Launch **C64 Emulator** from the Booster.
+
+### Installing by hand
 
 1. Download the release from
    [GitHub](https://github.com/volkerm25/sidecart_c64_emu/releases):
@@ -32,9 +46,8 @@ The app is not in the Booster's app store yet; install it by hand:
    and `a801bcb1-6755-44f4-8d6d-922b7699976f.json`.
 2. Copy both to the `/apps` folder of the SD card. Name the `.uf2` file
    without the version: `a801bcb1-6755-44f4-8d6d-922b7699976f.uf2`.
-3. Create the folder `/c64/roms` and copy the three ROM files into it.
-   VICE's names (`basic-901226-01.bin`, `kernal-901227-03.bin`,
-   `chargen-901225-01.bin`) work too.
+3. Create the folder `/c64/roms` and copy the three ROM files into it,
+   as in step 3 above.
 4. Put the SD card back, open the Booster (its web page or its menu on the
    ST) and launch **C64 Emulator**.
 
